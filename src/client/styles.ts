@@ -65,6 +65,78 @@ export const STYLES = `
 .dsh-monaco-spacer {
   flex: 1 1 auto;
 }
+/* 状态栏左侧的设置入口：用一个贴合状态栏高度的图标按钮，展开后向上浮出面板。 */
+.dsh-monaco-settings {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+.dsh-monaco-settings-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+.dsh-monaco-settings-trigger:hover,
+.dsh-monaco-settings-trigger[data-active='true'] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.dsh-monaco-settings-trigger:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  outline-offset: 1px;
+}
+.dsh-monaco-settings-panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  box-sizing: border-box;
+  width: 248px;
+  padding: 10px 12px 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-3);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px var(--dsw-alias-bg-mask-3);
+}
+.dsh-monaco-settings-title {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.dsh-monaco-settings-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+.dsh-monaco-settings-row input {
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  cursor: pointer;
+}
+.dsh-monaco-settings-label {
+  min-width: 0;
+}
+.dsh-monaco-settings-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
 .dsh-monaco-action {
   padding: 2px 8px;
   font: inherit;

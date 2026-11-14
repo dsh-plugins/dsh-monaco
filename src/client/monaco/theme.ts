@@ -276,6 +276,14 @@ export function buildThemeColors(tokens: Readonly<Record<string, string>>): Reco
   set('editorSuggestWidget.background', widgetSurface)
   set('editorSuggestWidget.border', border2)
   set('editorSuggestWidget.selectedBackground', layer2)
+  // 右键菜单与命令面板同样走 `editorWidget` 之外的 `menu.*` 键；不写就会落到 Monaco
+  // 自带的灰色（#3c3c3c），和 DSH 的层次对不上。
+  set('menu.background', widgetSurface)
+  set('menu.foreground', labelPrimary)
+  set('menu.border', border2)
+  set('menu.separatorBackground', border1)
+  set('menu.selectionBackground', accent === undefined ? undefined : colorWithAlpha(accent, 0.32))
+  set('menu.selectionForeground', labelPrimary)
   set('editorError.foreground', error)
   set('editorWarning.foreground', warn)
   // 编辑器不设 editorInfo：主题的 idle 级在这个底色上过暗，交给基础主题。

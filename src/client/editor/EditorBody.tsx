@@ -18,6 +18,8 @@ import type { EditorFont } from '../monaco/theme.ts'
 import type { EditorCommandContext, MonacoApi, Translate } from '../types.ts'
 import type { EditorInstances } from './instances.ts'
 import { saveTab } from './saver.ts'
+import { useEditorSettings } from './settings.ts'
+import type { EditorSettingsStore } from './settings.ts'
 import type { EditorSessions, DocumentState } from './sessions.ts'
 import type { DocumentRead } from './source.ts'
 
@@ -67,6 +69,10 @@ export interface EditorFace {
   readonly runtime: MonacoRuntime
   readonly registry: MonacoExtensionRegistry
   readonly config: EditorDefaults
+  /** 全局编辑器设置（同一浏览器内所有编辑器共享）。 */
+  readonly settings: EditorSettingsStore
+  /** 状态栏左侧的设置入口。 */
+  readonly settingsControl: () => ReactNode
   readonly t: Translate
   readonly logger: { warn(format: unknown, ...params: unknown[]): void }
   readonly readDocument: (sessionId: string, path: string, signal: AbortSignal) => Promise<DocumentRead>
@@ -180,8 +186,25 @@ export function EditorBody(props: EditorBodyProps): ReactNode {
   const instanceRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
   const contentRef = useRef(content)
   contentRef.current = content
-  const wrapRef = useRef(wrap)
-  wrapRef.current = wrap
+  const settings = useEditorSettings(editor.settings)
+  // 换行取值的来源有两个：全局设置是默认值，预览工具栏的按钮是该标签页的临时覆盖。
+  // 平台那份状态默认就是「开」，无法区分「用户刚关掉」与「初始值」，所以只在工具栏
+  // 的值**变化**时把它记为覆盖，挂载时的初值不算——否则全局设置永远不生效。
+  const initialWrap = useRef(wrap)
+  const wrapOverride = useRef<boolean | undefined>(undefined)
+  if (wrap !== initialWrap.current) {
+    initialWrap.current = wrap
+    wrapOverride.current = wrap
+  }
+  const effectiveWrap = wrapOverride.current ?? settings.wordWrap
+  const wrapRef = useRef(effectiveWrap)
+  wrapRef.current = effectiveWrap
+  // 设置改变后，已经被工具栏覆盖过的标签页保持用户自己的选择，其余的跟随设置。
+  useEffect(() => {
+    if (wrapOverride.current !== undefined) return
+    wrapRef.current = settings.wordWrap
+    instanceRef.current?.updateOptions({ wordWrap: settings.wordWrap ? 'on' : 'off' })
+  }, [settings.wordWrap])
   const saveRef = useRef<(force: boolean) => void>(() => {})
   // 编辑器自己管理滚动，不再把共享滚动容器的位置与行导航交给平台正文。
   const absolutePath = meta.value?.absolutePath
@@ -269,10 +292,28 @@ export function EditorBody(props: EditorBodyProps): ReactNode {
     const view = sessions.viewOf(tab.id)
     if (view === undefined) return
     const languageId = resolveLanguageId(api, registry, view.path)
-    const model = api.editor.createModel(view.text, languageId, api.Uri.file(view.path))
+    // 同一个路径可能已经有一个模型：组件重挂时旧模型尚未释放，或别的标签页/插件用同一 URI
+    // 建过模型。`createModel` 遇到重复 URI 会抛错并把整个视图打挂，所以这里先查再决定：
+    // 被别的标签页持有的模型不能复用（关闭任一标签页都会把它 dispose 掉，
+    // 另一侧就会拿着已释放的模型继续敲字），也不能直接释放，只能给本次用一个带 fragment 的 URI。
+    let uri = api.Uri.file(view.path)
+    // `getModel` 在找不到时可能返回 `null`，两种情况都当作「没有残留模型」。
+    const existing = api.editor.getModel(uri) ?? undefined
+    if (existing !== undefined) {
+      const owner = sessions.tabIds().find(other => other !== tab.id && sessions.viewOf(other)?.model === existing)
+      if (owner === undefined) {
+        editor.logger.warn('dsh-monaco: 路径 "%s" 上残留了未被使用的 Monaco 模型，已释放并重建', view.path)
+        existing.dispose()
+      } else {
+        editor.logger.warn('dsh-monaco: 路径 "%s" 已由标签页 %s 持有模型，本次使用独立 URI', view.path, owner)
+        uri = uri.with({ fragment: `dsh-monaco-tab=${tab.id}` })
+        api.editor.getModel(uri)?.dispose()
+      }
+    }
+    const model = api.editor.createModel(view.text, languageId, uri)
     model.onDidChangeContent(() => { sessions.refreshDirty(tab.id) })
     sessions.attachModel(tab.id, model, languageId)
-  }, [api, phase, registry, sessions, tab.id])
+  }, [api, editor, phase, registry, sessions, tab.id])
 
   // 编辑器实例：模型与 Monaco 都就绪后创建一次。
   useEffect(() => {
@@ -370,10 +411,10 @@ export function EditorBody(props: EditorBodyProps): ReactNode {
     }
   }, [api, instances, modelRevision, registry, registryRevision, tab.id])
 
-  // 换行开关来自预览工具栏，与 Monaco 的 wordWrap 保持同步。
+  // 换行：工具栏覆盖或全局设置变化时同步给 Monaco。
   useEffect(() => {
-    instanceRef.current?.updateOptions({ wordWrap: wrap ? 'on' : 'off' })
-  }, [modelRevision, wrap])
+    instanceRef.current?.updateOptions({ wordWrap: effectiveWrap ? 'on' : 'off' })
+  }, [effectiveWrap, modelRevision])
 
   // 行导航：只在平台给出新的导航代数时应答一次，滚动与光标都落在目标行。
   const answeredNavigation = useRef(-1)
@@ -465,6 +506,7 @@ export function EditorBody(props: EditorBodyProps): ReactNode {
       <div className="dsh-monaco-host" ref={hostRef} data-dsh-monaco-host />
       {overlay}
       <div className="dsh-monaco-status" data-dirty={state?.dirty === true ? 'true' : 'false'} data-dsh-monaco-status>
+        <editor.settingsControl />
         <span data-dsh-monaco-language>{languageLabel}</span>
         <span data-dsh-monaco-position>
           {t('status.position', { line: state?.line ?? 1, column: state?.column ?? 1 })}

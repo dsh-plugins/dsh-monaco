@@ -19,14 +19,17 @@ import type { EditorDefaults } from './config.ts'
 import { createEditorBody } from './editor/body-component.tsx'
 import { CloseGuard, TabCloseVeto } from './editor/close-guard.ts'
 import { createCloseConfirm } from './editor/CloseConfirm.tsx'
+import { createSettingsControl } from './editor/EditorSettings.tsx'
 import { EditorInstances } from './editor/instances.ts'
 import { saveTab } from './editor/saver.ts'
+import { EditorSettingsStore } from './editor/settings.ts'
 import { EditorSessions } from './editor/sessions.ts'
 import { readDocument as readFileText, saveDocument as writeFileText } from './editor/source.ts'
 import { CLOSE_BUTTON_SELECTOR, TAB_ID_ATTRIBUTE, TAB_SELECTOR, TabBadges } from './editor/tab-badges.ts'
 import { en, LOCALE_NAMESPACE, zh } from './locales.ts'
 import { MonacoRuntime, type MonacoRuntimeOptions } from './monaco/runtime.ts'
 import { MonacoExtensionRegistry } from './monaco/registry.ts'
+import { followShadowVariables } from './monaco/shadow-vars.ts'
 import { buildSchemeTheme, readDocumentTokens, readEditorFont, schemeThemeId } from './monaco/theme.ts'
 import type { EditorFont } from './monaco/theme.ts'
 import { STYLES, STYLE_OWNER } from './styles.ts'
@@ -95,6 +98,7 @@ export function apply(ctx: ClientContext): void {
   }
   const runtime = new MonacoRuntime(runtimeOptions)
   const editorDefaults: EditorDefaults = config.editor
+  const settings = new EditorSettingsStore(platform.logger)
   let disposed = false
 
   platform.effect(installStyles, 'dsh-monaco: styles')
@@ -225,6 +229,8 @@ export function apply(ctx: ClientContext): void {
       runtime,
       registry,
       config: editorDefaults,
+      settings,
+      settingsControl: createSettingsControl({ settings, t }),
       t,
       logger: platform.logger,
       readDocument: (sessionId, path, signal) => readFileText(platform.remote, t, platform.logger, sessionId, path, signal),
@@ -288,6 +294,10 @@ export function apply(ctx: ClientContext): void {
       document.removeEventListener('auxclick', onAuxClick, true)
     }
   }, 'dsh-monaco: close gestures')
+
+  // Monaco 的独立浮层（右键菜单、命令面板）渲染在 Shadow DOM 里，拿不到编辑器上的
+  // `--vscode-*` 变量；把它们镜像到根元素，浮层才有背景、边框与正确的字色。
+  platform.effect(() => followShadowVariables(platform.logger), 'dsh-monaco: shadow variables')
 
   // 标签页未保存标记：关闭按钮在脏状态下画成圆点。
   platform.effect(() => new TabBadges(sessions).start(), 'dsh-monaco: tab badges')
