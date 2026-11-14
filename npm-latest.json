@@ -1,0 +1,10 @@
+{
+  "name": "@dsh-plugin/dsh-monaco",
+  "latest": "0.0.1",
+  "publishedAt": "2026-11-14T13:19:41.328Z",
+  "dist": {
+    "tarball": "https://registry.npmjs.org/@dsh-plugin/dsh-monaco/-/dsh-monaco-0.0.1.tgz",
+    "integrity": "sha512-GocHrDL/LTVteNED98YStK8QmUi2bSmHH4HqDqU+hnLARloelI0mj6QemVtcnvU2Ql1Cr0/24HGwzHWvDQFiTw==",
+    "unpackedSize": 510240
+  }
+}
