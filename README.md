@@ -41,10 +41,14 @@
    两条已知的平台侧行为：其一，`Ctrl/Cmd+W` 走平台的快捷键分发，那里没有 `try/catch`，所以按键关闭时会有一条被抛出的 `TabCloseVeto` 落到控制台——确认框照常弹出，功能不受影响；其二，平台在「用新资源替换标签页」时同样会过一遍关闭钩子，此时确认框的「保存」会先关掉旧标签页，那次导航需要重新发起。这两个都是平台关闭链路本身的性质，插件侧不做绕道。
 8. **浮层变量**：右键菜单与命令面板并不渲染在编辑器内部——Monaco 把它们放进 `div.shadow-root-host` 的 Shadow DOM，宿主的 `:host { all: initial }` 切断全部继承，而 `--vscode-*` 变量只声明在 `.monaco-editor` / `.monaco-component` 上。于是浮层里 `background-color: var(--vscode-menu-background)` 整条失效（背景透明）、`color` 回落到初始值（黑字），深色背景上的黑字基本看不见。
 
-   修法是把这些变量镜像到 `document.documentElement`：Shadow DOM 宿主继承自 document，自定义属性可以正常继承进 shadow 树。变量取自 Monaco 自己注入的 `style.monaco-colors`，因此换主题后重新镜像即可跟上，不必在此重复维护一份配色。另外 Monaco 只引用不定义 `--vscode-cornerRadius-*`、`--vscode-strokeThickness`、`--vscode-shadow-lg`（在 VS Code 里由工作台样式给出），缺了它们菜单就没有圆角与边框，所以这几个由宿主补上默认值；Monaco 将来自带同名变量时以后者为准。
+   修法是把这些变量镜像到 `document.documentElement`：Shadow DOM 宿主继承自 document，自定义属性可以正常继承进 shadow 树。变量取自 Monaco 自己注入的 `style.monaco-colors`，因此换主题后重新镜像即可跟上，不必在此重复维护一份配色。找到配色表之后，观察范围收敛到那张表本身（Monaco 换主题是改写既有 `<style>` 的文本），页面里其他 `head` 变化不会触发重读。
+
+   另外 Monaco 只引用不定义 `--vscode-cornerRadius-*`、`--vscode-strokeThickness`、`--vscode-shadow-lg`（在 VS Code 里由工作台样式给出），缺了它们菜单就没有圆角与边框，所以这几个由插件补默认值：圆角与描边是固定值，阴影按主题的蒙层色合成。Monaco 自己声明过同名变量时以它为准。
 
    主题里还显式写了 `menu.*` 一族颜色（背景、前景、边框、分隔线、选中项），否则菜单会落到 Monaco 自带的灰色，和 DSH 的层次对不上。
-9. **编辑器设置**：设置在 `localStorage` 里存一份（键 `dsh-monaco/editor-settings`），同一浏览器内所有编辑器共享，改动立即推给已打开的实例。换行这个项目前有两处来源——全局设置是默认值，预览工具栏的按钮是该标签页的临时覆盖。平台那份状态默认就是「开」，无法区分「用户刚关掉」与「初始值」，所以只在工具栏的值**变化**时把它记为覆盖，挂载时的初值不算，否则全局设置永远不生效。
+9. **编辑器设置**：设置在 `localStorage` 里存一份（键 `dsh-monaco/editor-settings`），当前页面与同源的其他窗口共享——跨窗口靠 `storage` 事件同步，写入方自己不会收到该事件，所以不会自激。改动立即推给已打开的实例。
+
+   换行这个项目前有两处来源——全局设置是默认值，预览工具栏的按钮是该标签页的临时覆盖。平台那份状态默认就是「开」，无法区分「用户刚关掉」与「初始值」，所以只在工具栏的值**变化**时记为覆盖（挂载时的初值不算，否则全局设置永远不生效）；覆盖随标签页存在，切到别的文件不带走。改全局设置会清掉当前标签页的覆盖，否则用户一旦点过工具栏按钮，就再也没有回到「跟随全局」的路径。
 
 ## 安装
 

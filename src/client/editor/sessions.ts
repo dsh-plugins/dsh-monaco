@@ -468,6 +468,17 @@ export class EditorSessions {
     this.notify()
   }
 
+  /**
+   * 丢弃全部标签页与模型，插件卸载时调用。
+   *
+   * 只释放本容器持有的模型：Monaco 是全页共享的，别的插件可能用同一个 URI 建过模型，
+   * 那些不归这里管。
+   */
+  disposeAll(): void {
+    for (const tabId of [...this.entries.keys()]) this.dispose(tabId)
+    this.activeId = undefined
+  }
+
   private patch(tabId: string, patch: Partial<DocumentState>): void {
     const entry = this.entries.get(tabId)
     if (entry === undefined) return

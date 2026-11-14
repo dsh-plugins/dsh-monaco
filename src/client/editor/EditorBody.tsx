@@ -6,7 +6,7 @@
  * 模型与未保存文本留在状态容器里，所以撤销历史、光标与滚动位置都不会丢。
  * @module dsh-monaco/client/editor/EditorBody
  */
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import type * as Monaco from 'monaco-editor'
 import { languageForPath } from '../../shared/language.ts'
@@ -187,24 +187,28 @@ export function EditorBody(props: EditorBodyProps): ReactNode {
   const contentRef = useRef(content)
   contentRef.current = content
   const settings = useEditorSettings(editor.settings)
-  // 换行取值的来源有两个：全局设置是默认值，预览工具栏的按钮是该标签页的临时覆盖。
-  // 平台那份状态默认就是「开」，无法区分「用户刚关掉」与「初始值」，所以只在工具栏
-  // 的值**变化**时把它记为覆盖，挂载时的初值不算——否则全局设置永远不生效。
-  const initialWrap = useRef(wrap)
-  const wrapOverride = useRef<boolean | undefined>(undefined)
-  if (wrap !== initialWrap.current) {
-    initialWrap.current = wrap
-    wrapOverride.current = wrap
-  }
-  const effectiveWrap = wrapOverride.current ?? settings.wordWrap
-  const wrapRef = useRef(effectiveWrap)
-  wrapRef.current = effectiveWrap
-  // 设置改变后，已经被工具栏覆盖过的标签页保持用户自己的选择，其余的跟随设置。
+  // 换行有两个来源：全局设置是默认值，预览工具栏的按钮是当前标签页的覆盖。
+  // 平台那份状态默认就是「开」，无法区分「用户刚关掉」与「初始值」，所以只在工具栏的值
+  // **变化**时记为覆盖（挂载时的初值不算，否则全局设置永远不生效）。
+  // 改全局设置会清掉所有覆盖，让新值对每个文件都生效——否则用户一旦点过工具栏按钮，
+  // 就再也没有回到「跟随全局」的路径。
+  const previousWrap = useRef(wrap)
+  const wrapTab = useRef(tab.id)
+  const [wrapOverride, setWrapOverride] = useState<boolean | undefined>(undefined)
   useEffect(() => {
-    if (wrapOverride.current !== undefined) return
-    wrapRef.current = settings.wordWrap
-    instanceRef.current?.updateOptions({ wordWrap: settings.wordWrap ? 'on' : 'off' })
-  }, [settings.wordWrap])
+    // 组件可能被复用到另一个标签页：覆盖是「这个文件的选择」，不能跟着搬过去。
+    if (wrapTab.current !== tab.id) {
+      wrapTab.current = tab.id
+      previousWrap.current = wrap
+      setWrapOverride(undefined)
+      return
+    }
+    if (wrap === previousWrap.current) return
+    previousWrap.current = wrap
+    setWrapOverride(wrap)
+  }, [tab.id, wrap])
+  useEffect(() => { setWrapOverride(undefined) }, [settings.wordWrap])
+  const effectiveWrap = wrapOverride ?? settings.wordWrap
   const saveRef = useRef<(force: boolean) => void>(() => {})
   // 编辑器自己管理滚动，不再把共享滚动容器的位置与行导航交给平台正文。
   const absolutePath = meta.value?.absolutePath
@@ -294,21 +298,14 @@ export function EditorBody(props: EditorBodyProps): ReactNode {
     const languageId = resolveLanguageId(api, registry, view.path)
     // 同一个路径可能已经有一个模型：组件重挂时旧模型尚未释放，或别的标签页/插件用同一 URI
     // 建过模型。`createModel` 遇到重复 URI 会抛错并把整个视图打挂，所以这里先查再决定：
-    // 被别的标签页持有的模型不能复用（关闭任一标签页都会把它 dispose 掉，
-    // 另一侧就会拿着已释放的模型继续敲字），也不能直接释放，只能给本次用一个带 fragment 的 URI。
+    // 同一个路径上可能已经有模型：组件重挂时旧模型尚未释放，或别的插件用同一个 `file:` URI
+    // 建过模型。`createModel` 遇到重复 URI 会抛错，把整个视图打挂。
+    // 这里既不释放也不复用来源不明的模型——它可能属于别的插件，销毁它会让对方拿着已释放的
+    // 模型继续渲染；复用则会让两个使用者共享生命周期。给本次换一个带 fragment 的 URI 即可。
     let uri = api.Uri.file(view.path)
-    // `getModel` 在找不到时可能返回 `null`，两种情况都当作「没有残留模型」。
-    const existing = api.editor.getModel(uri) ?? undefined
-    if (existing !== undefined) {
-      const owner = sessions.tabIds().find(other => other !== tab.id && sessions.viewOf(other)?.model === existing)
-      if (owner === undefined) {
-        editor.logger.warn('dsh-monaco: 路径 "%s" 上残留了未被使用的 Monaco 模型，已释放并重建', view.path)
-        existing.dispose()
-      } else {
-        editor.logger.warn('dsh-monaco: 路径 "%s" 已由标签页 %s 持有模型，本次使用独立 URI', view.path, owner)
-        uri = uri.with({ fragment: `dsh-monaco-tab=${tab.id}` })
-        api.editor.getModel(uri)?.dispose()
-      }
+    if (api.editor.getModel(uri) !== null) {
+      editor.logger.warn('dsh-monaco: 路径 "%s" 上已有其它 Monaco 模型占用该 URI，本次使用独立 URI', view.path)
+      uri = uri.with({ fragment: `dsh-monaco-tab=${tab.id}` })
     }
     const model = api.editor.createModel(view.text, languageId, uri)
     model.onDidChangeContent(() => { sessions.refreshDirty(tab.id) })
@@ -323,7 +320,7 @@ export function EditorBody(props: EditorBodyProps): ReactNode {
     const view = sessions.viewOf(tab.id)
     if (view?.model === undefined) return
     const instance = api.editor.create(host, {
-      ...constructionOptions(editor.config, editor.font(), wrapRef.current, editor.prepareTheme(api), t('viewer.title')),
+      ...constructionOptions(editor.config, editor.font(), effectiveWrap, editor.prepareTheme(api), t('viewer.title')),
       model: view.model,
     })
     instanceRef.current = instance

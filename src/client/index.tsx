@@ -99,6 +99,7 @@ export function apply(ctx: ClientContext): void {
   const runtime = new MonacoRuntime(runtimeOptions)
   const editorDefaults: EditorDefaults = config.editor
   const settings = new EditorSettingsStore(platform.logger)
+  platform.effect(() => settings.watchOtherWindows(), 'dsh-monaco: settings sync')
   let disposed = false
 
   platform.effect(installStyles, 'dsh-monaco: styles')
@@ -214,6 +215,8 @@ export function apply(ctx: ClientContext): void {
   // `readyPromise` 是同一个 Promise：多次访问 `service.ready` 不会重复触发加载。
   const readyPromise: Promise<void> = runtime.load()
     .then(api => registry.syncInto(api).then(() => { applyTheme(api) }))
+  // 卸载时释放本插件创建的模型：Monaco 是全页共享的，留下它们会让下一次加载撞上重复 URI。
+  platform.effect(() => () => { sessions.disposeAll() }, 'dsh-monaco: model cleanup')
   void readyPromise.catch((error: unknown) => {
     // 具体原因已由 MonacoRuntime 记录并在视图里展示；这里补一句排查方向。
     platform.logger.warn('dsh-monaco: 编辑器初始化失败（%s），检查 /dsh-monaco/vs/ 资源路由是否可用',

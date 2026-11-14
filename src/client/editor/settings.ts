@@ -34,6 +34,7 @@ interface Logger {
 /** 校验并补齐一份来自存储或外部的设置。 */
 function normalize(value: unknown, logger: Logger): EditorSettings {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    logger.warn('dsh-monaco: 编辑器设置的存储内容不是 JSON 对象（%s），已回退到默认值', String(value))
     return DEFAULT_SETTINGS
   }
   const record = value as Record<string, unknown>
@@ -44,6 +45,11 @@ function normalize(value: unknown, logger: Logger): EditorSettings {
   return {
     wordWrap: typeof wordWrap === 'boolean' ? wordWrap : DEFAULT_SETTINGS.wordWrap,
   }
+}
+
+/** 两份设置是否等价。 */
+function sameSettings(left: EditorSettings, right: EditorSettings): boolean {
+  return left.wordWrap === right.wordWrap
 }
 
 /** 全局编辑器设置容器。 */
@@ -71,14 +77,7 @@ export class EditorSettingsStore {
         error instanceof Error ? error.message : String(error))
       return DEFAULT_SETTINGS
     }
-    if (raw === null) return DEFAULT_SETTINGS
-    try {
-      return normalize(JSON.parse(raw), this.logger)
-    } catch (error) {
-      this.logger.warn('dsh-monaco: 编辑器设置的存储内容无法解析（%s），已回退到默认值',
-        error instanceof Error ? error.message : String(error))
-      return DEFAULT_SETTINGS
-    }
+    return raw === null ? DEFAULT_SETTINGS : this.parse(raw)
   }
 
   /** 订阅设置变化。 */
@@ -96,16 +95,48 @@ export class EditorSettingsStore {
    */
   update(patch: Partial<EditorSettings>): void {
     const next = normalize({ ...this.current, ...patch }, this.logger)
-    if (next.wordWrap === this.current.wordWrap) return
+    if (sameSettings(next, this.current)) return
     this.current = next
+    this.persist(next)
+    for (const listener of this.listeners) listener()
+  }
+
+  /**
+   * 跟随其它窗口的改动。
+   *
+   * `localStorage` 的 `storage` 事件只在**别的**窗口写入时触发，正好用来让多个页面保持一致。
+   * @returns 停止跟随。
+   */
+  watchOtherWindows(): () => void {
+    const onStorage = (event: StorageEvent): void => {
+      if (event.key !== null && event.key !== STORAGE_KEY) return
+      const next = event.newValue === null ? DEFAULT_SETTINGS : this.parse(event.newValue)
+      if (sameSettings(next, this.current)) return
+      this.current = next
+      for (const listener of this.listeners) listener()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => { window.removeEventListener('storage', onStorage) }
+  }
+
+  private persist(settings: EditorSettings): void {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
     } catch (error) {
       // 写不进去就只在本次会话生效；界面照常反映改动，但日志必须留下原因。
       this.logger.warn('dsh-monaco: 无法保存编辑器设置（%s），改动只在本次会话有效',
         error instanceof Error ? error.message : String(error))
     }
-    for (const listener of this.listeners) listener()
+  }
+
+  private parse(raw: string): EditorSettings {
+    try {
+      return normalize(JSON.parse(raw), this.logger)
+    } catch (error) {
+      this.logger.warn('dsh-monaco: 编辑器设置的存储内容无法解析（%s），已回退到默认值',
+        error instanceof Error ? error.message : String(error))
+      return DEFAULT_SETTINGS
+    }
   }
 }
 

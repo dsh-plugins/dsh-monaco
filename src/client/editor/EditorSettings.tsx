@@ -29,11 +29,17 @@ export function createSettingsControl(face: EditorSettingsFace): () => ReactNode
     const [open, setOpen] = useState(false)
     const rootRef = useRef<HTMLDivElement | null>(null)
     const buttonRef = useRef<HTMLButtonElement | null>(null)
+    const checkboxRef = useRef<HTMLInputElement | null>(null)
 
     const close = useCallback((restoreFocus: boolean): void => {
       setOpen(false)
       if (restoreFocus) buttonRef.current?.focus()
     }, [])
+
+    // 打开后把焦点送进面板，键盘用户不必再按一次 Tab 才能到开关上。
+    useEffect(() => {
+      if (open) checkboxRef.current?.focus()
+    }, [open])
 
     // 点击面板与按钮之外的地方收起。
     useEffect(() => {
@@ -44,7 +50,7 @@ export function createSettingsControl(face: EditorSettingsFace): () => ReactNode
         if (rootRef.current?.contains(target) === true) return
         setOpen(false)
       }
-      // 捕获阶段：页面上的其他按钮不该在菜单收起的同时被触发。
+      // 捕获阶段：先一步收起，页面上的其他控件照常收到这次点击。
       document.addEventListener('mousedown', onPointerDown, true)
       return () => { document.removeEventListener('mousedown', onPointerDown, true) }
     }, [open])
@@ -84,6 +90,7 @@ export function createSettingsControl(face: EditorSettingsFace): () => ReactNode
               <label className="dsh-monaco-settings-row">
                 <input
                   type="checkbox"
+                  ref={checkboxRef}
                   checked={value.wordWrap}
                   onChange={event => { settings.update({ wordWrap: event.target.checked }) }}
                   data-dsh-monaco-setting="wordWrap"
