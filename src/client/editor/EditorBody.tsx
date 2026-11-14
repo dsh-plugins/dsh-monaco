@@ -10,13 +10,14 @@ import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import type * as Monaco from 'monaco-editor'
 import { languageForPath } from '../../shared/language.ts'
-import { MONACO_SAVE_PROTOCOL, type SaveFileRequest, type SaveFileResult } from '../../shared/protocol.ts'
+import type { SaveFileRequest, SaveFileResult } from '../../shared/protocol.ts'
 import type { EditorDefaults } from '../config.ts'
 import type { MonacoRuntime, MonacoRuntimeState } from '../monaco/runtime.ts'
 import type { MonacoExtensionRegistry } from '../monaco/registry.ts'
 import type { EditorFont } from '../monaco/theme.ts'
 import type { EditorCommandContext, MonacoApi, Translate } from '../types.ts'
 import type { EditorInstances } from './instances.ts'
+import { saveTab } from './saver.ts'
 import type { EditorSessions, DocumentState } from './sessions.ts'
 import type { DocumentRead } from './source.ts'
 
@@ -388,36 +389,14 @@ export function EditorBody(props: EditorBodyProps): ReactNode {
   }, [modelRevision, tab.navigation.params, tab.navigation.revision])
 
   const commit = useCallback((force: boolean) => {
-    const current = sessions.stateOf(tab.id)
-    const view = sessions.viewOf(tab.id)
-    const model = view?.model
-    if (current === undefined || model === undefined || current.saving) return
-    if (!current.dirty) return
-    sessions.beginSave(tab.id)
-    const request: SaveFileRequest = {
-      protocol: MONACO_SAVE_PROTOCOL,
-      sessionId,
-      path: current.path,
-      text: model.getValue(),
-      ...(force || current.version === undefined ? {} : { expectedVersion: current.version }),
-    }
-    void editor.saveDocument(request).then((result) => {
-      if (result.ok) {
-        sessions.saved(tab.id, result.version)
+    void saveTab({ sessions, saveDocument: editor.saveDocument, logger: editor.logger, t }, tab.id, { force })
+      .then((outcome) => {
+        if (outcome.status !== 'saved') return
+        // 平台文档视图据此刷新它记录的磁盘版本。
         const renderer = contentRef.current
-        if (renderer.kind === 'renderer') renderer.loaded(result.version)
-        return
-      }
-      if (result.code === 'stale-version') {
-        // 界面上给用户一句固定文案（它能被翻译），服务端的细节只进日志。
-        editor.logger.warn('dsh-monaco: 保存 "%s" 被版本守卫拒绝：%s', current.path, result.message)
-        sessions.conflict(tab.id, t('conflict.save'))
-        return
-      }
-      editor.logger.warn('dsh-monaco: 保存 "%s" 失败（%s）：%s', current.path, result.code, result.message)
-      sessions.saveFailed(tab.id, result.message)
-    })
-  }, [editor, sessionId, sessions, t, tab.id])
+        if (renderer.kind === 'renderer') renderer.loaded(outcome.version)
+      })
+  }, [editor, sessions, t, tab.id])
   saveRef.current = commit
 
   const reloadFromDisk = useCallback(() => {
@@ -426,7 +405,6 @@ export function EditorBody(props: EditorBodyProps): ReactNode {
     if (renderer.kind === 'renderer') renderer.reload()
   }, [sessions, tab.id])
 
-  const save = (): void => { commit(false) }
   const overwrite = (): void => { commit(true) }
   const retry = (): void => {
     const renderer = contentRef.current
@@ -498,16 +476,6 @@ export function EditorBody(props: EditorBodyProps): ReactNode {
             ? t('status.saving')
             : state?.dirty === true ? t('status.unsaved') : t('status.saved')}
         </span>
-        <button
-          type="button"
-          className="dsh-monaco-action"
-          title={t('action.saveHint')}
-          disabled={state?.dirty !== true || state?.saving === true}
-          onClick={save}
-          data-dsh-monaco-save
-        >
-          {t('action.save')}
-        </button>
       </div>
     </div>
   )

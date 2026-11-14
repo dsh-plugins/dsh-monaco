@@ -9,7 +9,9 @@
 | 能力 | 说明 |
 |---|---|
 | 接管文件预览 | 以 `extension` 优先级注册文档预览实现，覆盖内置的代码预览与纯文本回退；图片、PDF、Office、Excel 仍由平台原实现呈现 |
-| 就地编辑与保存 | `Ctrl/Cmd+S` 或状态栏「保存」写回磁盘；保存成功即刷新本地基线，撤销/重做、光标与滚动位置在切换到别的标签页后仍然保留 |
+| 就地编辑与保存 | `Ctrl/Cmd+S` 写回磁盘，关闭标签页时也会提示保存；保存成功即刷新本地基线，撤销/重做、光标与滚动位置在切换到别的标签页后仍然保留 |
+| 未保存标记 | 有改动的标签页把芯片上的 `×` 画成圆点（悬停恢复成 `×`），与 VS Code 一致 |
+| 关闭确认 | 有未保存改动时关闭标签页会弹出「保存 / 不保存 / 取消」确认框：Esc 取消、Enter 保存；保存失败时确认框不会消失，并把原因留在框内 |
 | 版本守卫 | 保存携带读取时观察到的文件版本；磁盘已被别的进程改动时返回 `409`，界面给出「重新加载」与「仍然覆盖」两条明确出路，不做静默覆盖 |
 | 跟随界面主题 | 从 `--dsw-alias-*` 变量派生 Monaco 配色（选中用主题自己的文档选中蒙层，光标与焦点用品牌强调色，滚动条用边框色），界面切换亮色/暗色时同步切换；也可以在配置里固定成某个已注册主题 |
 | 跟随字体设置 | 代码字体与字号取自「设置 → 外观」里的代码字体，改完立即生效，无需重开文件 |
@@ -30,6 +32,11 @@
    语义也要对上：`--dsw-alias-brand-primary` 是文字主色级（暗色近白、亮色近黑），不是品牌强调色。因此选中用 `--dsw-alias-bg-document-selection`，光标与焦点框用 `--dsw-alias-brand-primary-new-colorprimary-new-color`，滚动条用 `--dsw-alias-border-l2/-l4`，浮层表面用 `--dsw-alias-bg-layer-3`。叠加透明度时对既有 alpha 做乘法（`border-l1` 本身就是 6% 的白，覆盖会把它放大成 50%）。
 
    字体取 body 上合成好的 `--ds-font-family-code` 与 `--dsh-code-font-size`；状态栏等界面文字用正文栈 `--dsw-font-family`。
+7. **关闭确认**：平台的关闭链路是同步的——`sidebarRight.close(tabId)` → 关闭钩子 → 移除标签页；钩子要么正常返回（继续关），要么抛错（保留标签页，平台文档写明 *Failure preserves the tab*，点击路径上平台自己捕获并记录该异常）。所以「弹出确认框」实现为：`registerCloseHandler('text', …)` 在标签页有未保存改动时抛 `TabCloseVeto` 中止这次关闭，确认框挂在 `shell.overlay` 里；用户选完再由守卫发起一次被放行的关闭。放行只在这一次同步调用内有效，不会残留到下一次关闭。
+
+   标签页上的 `×` 由平台停靠组件渲染，没有可替换的接口，所以圆点不改标题、只在关闭按钮上打 `data-dsh-monaco-tab-dirty` 标记，由样式把图标改成圆点（`visibility` 而非 `display`，按钮尺寸不变、标签条不抖动）。标记在脏状态变化与标签条重渲染时都会重新打一遍，避免 React 重挂节点丢掉外来属性。
+
+   两条已知的平台侧行为：其一，`Ctrl/Cmd+W` 走平台的快捷键分发，那里没有 `try/catch`，所以按键关闭时会有一条被抛出的 `TabCloseVeto` 落到控制台——确认框照常弹出，功能不受影响；其二，平台在「用新资源替换标签页」时同样会过一遍关闭钩子，此时确认框的「保存」会先关掉旧标签页，那次导航需要重新发起。这两个都是平台关闭链路本身的性质，插件侧不做绕道。
 
 ## 安装
 
@@ -183,7 +190,7 @@ npm run build       # build:host (tsc) + build:client (tsdown + 声明文件)
 
 - `src/shared/`：宿主与浏览器共用的纯逻辑（地址构造、资源路径校验、扩展名归一化、语言匹配、保存协议、语言映射），测试集中在这些不依赖运行时的规则上；
 - `src/`（顶层）：宿主端——资源路由、保存路由、Monaco 目录定位、配置；
-- `src/client/`：浏览器端——Monaco 加载器、主题派生、扩展注册表、编辑器状态与视图、对外服务。
+- `src/client/`：浏览器端——Monaco 加载器、主题派生、扩展注册表、编辑器状态、保存通道、关闭守卫与视图、对外服务。
 
 客户端产物由 `tsdown.client.config.mjs` 包成 `window.__ModuleLoader__.load({ id: "dsh-monaco", factory })`；`react`、`react-dom`、`@deepseek-ai/cordis` 保持外部化，其余依赖内联。运行期不对 `@deepseek-ai/*` 做值导入：宿主端只按用到的成员声明自己的服务外观（`src/host-types.ts`），客户端同理（`src/client/types.ts`）。
 
@@ -195,6 +202,9 @@ npm run build       # build:host (tsc) + build:client (tsdown + 声明文件)
 - [x] `/dsh-monaco/vs/../../package.json`、`..%2f..%2fpackage.json`、`..%5c..%5cpackage.json` 均返回 404
 - [x] 保存路由：正常写入 200、方法不符 405、非 JSON 类型 415、坏 JSON 400、版本过期 409、文件不存在 404、超出上限 413
 - [x] 客户端产物在 `__ModuleLoader__.load` 之外没有顶层声明，`factory` 返回 `{ name, inject, apply, VIEWER_ID }`
+- [x] 状态栏没有「保存」按钮；`Ctrl+S` 仍写回磁盘
+- [x] 有未保存改动时标签芯片的 `×` 变成圆点（标记属性 `data-dsh-monaco-tab-dirty`、图标 `visibility: hidden`、按钮尺寸不变）
+- [x] 关闭有改动的标签页弹出确认框；「取消」与 Esc 保留标签页与改动，「不保存」关闭且磁盘不变，「保存」关闭且磁盘写入成功
 
 ## 许可
 

@@ -17,9 +17,13 @@ import { MONACO_ASSET_PREFIX, MONACO_SAVE_PATH } from '../shared/protocol.ts'
 import { FOLLOW_THEME_ID, readClientConfig } from './config.ts'
 import type { EditorDefaults } from './config.ts'
 import { createEditorBody } from './editor/body-component.tsx'
+import { CloseGuard, TabCloseVeto } from './editor/close-guard.ts'
+import { createCloseConfirm } from './editor/CloseConfirm.tsx'
 import { EditorInstances } from './editor/instances.ts'
+import { saveTab } from './editor/saver.ts'
 import { EditorSessions } from './editor/sessions.ts'
 import { readDocument as readFileText, saveDocument as writeFileText } from './editor/source.ts'
+import { CLOSE_BUTTON_SELECTOR, TAB_ID_ATTRIBUTE, TAB_SELECTOR, TabBadges } from './editor/tab-badges.ts'
 import { en, LOCALE_NAMESPACE, zh } from './locales.ts'
 import { MonacoRuntime, type MonacoRuntimeOptions } from './monaco/runtime.ts'
 import { MonacoExtensionRegistry } from './monaco/registry.ts'
@@ -52,8 +56,11 @@ export const name = 'dsh-monaco'
 /** 文档预览注册表里的实现身份，同时也是 `sidebar.right.tab.document` 的槽位键。 */
 export const VIEWER_ID = 'dsh-monaco/editor'
 
-/** 所需浏览器服务：插槽、文案、主题、文档预览注册表，以及文件读取用的远程方法。 */
-export const inject = ['slots', 'locale', 'theme', 'documentPreviews', 'remote', 'remote.workspaceFiles']
+/** 所需浏览器服务：插槽、文案、主题、文档预览注册表、侧边栏，以及文件读取用的远程方法。 */
+export const inject = ['slots', 'locale', 'theme', 'documentPreviews', 'sidebarRight', 'remote', 'remote.workspaceFiles']
+
+/** 平台文本预览标签页的类型；本插件在该类型内部替换正文与关闭行为。 */
+const TEXT_TAB_KIND = 'text'
 
 /** 把样式标签注入页面，热重载时按归属标记替换旧标签。 */
 function installStyles(): Disposable {
@@ -226,6 +233,70 @@ export function apply(ctx: ClientContext): void {
       font,
     }),
   )), 'dsh-monaco: editor body')
+
+  // 未保存关闭的守卫：确认框状态、保存通道与真正的关闭动作。
+  const guard = new CloseGuard({
+    sessions,
+    save: tabId => saveTab(
+      { sessions, saveDocument: request => writeFileText(MONACO_SAVE_PATH, t, platform.logger, request), logger: platform.logger, t },
+      tabId,
+    ),
+    close: (_sessionId, tabId) => { platform.sidebarRight.close(tabId) },
+    mountedSession: () => platform.sidebarRight.mounted.getSnapshot(),
+    logger: platform.logger,
+    t,
+  })
+  platform.effect(() => sessions.on('close', tabId => { guard.forget(tabId) }), 'dsh-monaco: close guard cleanup')
+
+  // 关闭钩子：只在本编辑器承载的标签页有未保存改动时中止关闭。
+  // `'text'` 是平台内置类型，同一 kind 只能有一个钩子；注册冲突时只让本项失效，
+  // 不把异常抛给 `apply`，否则整个客户端插件会一起加载失败。
+  platform.effect(() => {
+    try {
+      return platform.sidebarRight.registerCloseHandler(TEXT_TAB_KIND, (sessionId, tab) => {
+        if (guard.intercept(tab.id, sessionId)) throw new TabCloseVeto(tab.id)
+      })
+    } catch (error) {
+      platform.logger.warn('dsh-monaco: 无法注册关闭钩子（%s），关闭标签页时将不会提示未保存改动',
+        error instanceof Error ? error.message : String(error))
+      return () => {}
+    }
+  }, 'dsh-monaco: close guard')
+
+  // 关闭手势：标签芯片上的 × 与中键点击先经过这里，避免走平台那趟必然被拒的关闭。
+  platform.effect(() => {
+    const swallow = (event: MouseEvent, tabId: string | undefined): void => {
+      if (tabId === undefined || !guard.intercept(tabId)) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+    const onClick = (event: MouseEvent): void => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      swallow(event, target.closest<HTMLElement>(CLOSE_BUTTON_SELECTOR)?.dataset.dockkitTabClose)
+    }
+    const onAuxClick = (event: MouseEvent): void => {
+      if (event.button !== 1) return
+      const target = event.target
+      if (!(target instanceof Element)) return
+      swallow(event, target.closest<HTMLElement>(TAB_SELECTOR)?.dataset[TAB_ID_ATTRIBUTE])
+    }
+    document.addEventListener('click', onClick, true)
+    document.addEventListener('auxclick', onAuxClick, true)
+    return () => {
+      document.removeEventListener('click', onClick, true)
+      document.removeEventListener('auxclick', onAuxClick, true)
+    }
+  }, 'dsh-monaco: close gestures')
+
+  // 标签页未保存标记：关闭按钮在脏状态下画成圆点。
+  platform.effect(() => new TabBadges(sessions).start(), 'dsh-monaco: tab badges')
+
+  // 确认框：挂在整帧浮层里，没有待确认的关闭时不渲染。
+  platform.effect(() => platform.slots.inject('shell.overlay', () => platform.slots.register(
+    { name: 'shell.overlay', id: 'dsh-monaco/close-confirm', order: 100 },
+    createCloseConfirm({ guard, t }),
+  )), 'dsh-monaco: close confirm')
 
   /** 把一个标签页描述成公开事件。 */
   const openEventOf = (tabId: string): DocumentOpenEvent | undefined => {

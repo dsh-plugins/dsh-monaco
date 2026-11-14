@@ -44,10 +44,14 @@ export interface ThemeService {
   getTheme(): ThemeSnapshotLike
 }
 
-/** 插槽注册定义：本插件只用到 keyed 文档视图这一种。 */
+/** 插槽注册定义：`key` 用于 keyed 槽位，`id` 用于 list 槽位。 */
 export interface SlotRegistration {
   readonly name: string
-  readonly key: string
+  readonly key?: string
+  /** list 槽位的身份。 */
+  readonly id?: string
+  /** list 槽位内的排序。 */
+  readonly order?: number
   readonly locale?: string
 }
 
@@ -99,12 +103,33 @@ export interface RemoteFace {
   }
 }
 
+/** 侧边栏标签页记录。 */
+export interface SidebarTabLike {
+  readonly id: string
+}
+
+/**
+ * 侧边栏服务中本插件用到的部分。
+ *
+ * `registerCloseHandler` 是唯一的关闭钩子：按标签页类型注册，同步执行，
+ * 抛错表示保留标签页（平台文档写明「Failure preserves the tab」）。
+ */
+export interface SidebarRightService {
+  /** 关闭屏幕上的会话里的一个标签页。 */
+  close(tabId: string): void
+  /** 当前挂在屏幕上的会话；没有会话时为 `undefined`。 */
+  readonly mounted: { getSnapshot(): string | undefined }
+  /** 为一个标签页类型登记关闭前的处理函数。 */
+  registerCloseHandler(kind: string, handler: (sessionId: string, tab: SidebarTabLike) => void): Disposable
+}
+
 /** 本插件读取的平台上下文外观。 */
 export interface PlatformContext {
   readonly slots: SlotService
   readonly locale: LocaleService
   readonly theme: ThemeService
   readonly documentPreviews: DocumentPreviews
+  readonly sidebarRight: SidebarRightService
   readonly remote: RemoteFace
   readonly logger: {
     info(format: unknown, ...params: unknown[]): void

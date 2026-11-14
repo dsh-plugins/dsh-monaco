@@ -97,4 +97,101 @@ export const STYLES = `
   color: var(--dsw-alias-label-secondary);
   background: var(--dsw-alias-bg-base);
 }
+/* 有未保存改动的标签页：关闭按钮画成圆点，悬停时恢复成 ×，与 VS Code 一致。
+   visibility 而不是 display：按钮尺寸保持不变，标签条不会因为脏状态而抖动。 */
+[data-dockkit-tab-close][data-dsh-monaco-tab-dirty='true'] svg {
+  visibility: hidden;
+}
+[data-dockkit-tab-close][data-dsh-monaco-tab-dirty='true'] {
+  background-image: radial-gradient(circle closest-side, currentColor 62%, transparent 68%);
+}
+[data-dockkit-tab-close][data-dsh-monaco-tab-dirty='true']:hover svg {
+  visibility: visible;
+}
+[data-dockkit-tab-close][data-dsh-monaco-tab-dirty='true']:hover {
+  background-image: none;
+}
+.dsh-monaco-confirm {
+  position: fixed;
+  inset: 0;
+  /* 浮层座位的层叠上下文内抬升元素；不跨越整个帧，只保证压在正文之上。 */
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--dsw-font-family, inherit);
+}
+.dsh-monaco-confirm-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--dsw-alias-bg-mask-1);
+}
+.dsh-monaco-confirm-card {
+  position: relative;
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 48px));
+  padding: 20px 22px 16px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-3);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px var(--dsw-alias-bg-mask-3);
+}
+.dsh-monaco-confirm-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+.dsh-monaco-confirm-body {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+.dsh-monaco-confirm-failure {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}
+.dsh-monaco-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+.dsh-monaco-confirm-button {
+  min-width: 72px;
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+}
+.dsh-monaco-confirm-button:hover:enabled {
+  background: var(--dsw-alias-bg-layer-1);
+}
+.dsh-monaco-confirm-button[data-variant='primary'] {
+  color: var(--dsw-alias-bg-base);
+  background: var(--dsw-alias-brand-primary);
+  border-color: transparent;
+}
+.dsh-monaco-confirm-button[data-variant='primary']:hover:enabled {
+  background: var(--dsw-alias-brand-primary);
+  opacity: 0.88;
+}
+.dsh-monaco-confirm-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.dsh-monaco-confirm-button:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  outline-offset: 2px;
+}
 `

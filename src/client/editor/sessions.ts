@@ -158,6 +158,14 @@ export class EditorSessions {
   }
 
   /**
+   * 列出当前还有记录的标签页。
+   * @returns 标签页 id 的快照，可在遍历中安全地增删记录。
+   */
+  tabIds(): readonly string[] {
+    return [...this.entries.keys()]
+  }
+
+  /**
    * 读取一个标签页的记录视图。
    * @param tabId - 标签页 id。
    * @returns 会话、路径、模型与已读文本。
