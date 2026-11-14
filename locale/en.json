@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Monaco editor",
+    "description": "Opens text and code files from the workspace in Monaco inside the right sidebar, editable and savable in place. Saves carry a version guard, so a concurrent change on disk is confirmed before it is overwritten. Other plugins may register languages, highlight rules, themes, commands and actions."
+  }
+}

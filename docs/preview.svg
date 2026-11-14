@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="640" viewBox="0 0 1080 640" role="img" aria-label="dsh-monaco 在右侧边栏中的布局示意">
+  <desc>布局示意图：左侧会话列保持原样，右侧边栏的文档标签页换成 Monaco 编辑器，编辑器上方是预览工具栏，下方是状态栏与保存按钮。</desc>
+  <defs>
+    <clipPath id="editorClip"><rect x="404" y="96" width="636" height="440" rx="8"/></clipPath>
+  </defs>
+
+  <rect width="1080" height="640" fill="#f7f8fa"/>
+  <rect x="0" y="0" width="380" height="640" fill="#eef0f4"/>
+  <rect x="0" y="0" width="380" height="44" fill="#e6e9ef"/>
+  <circle cx="26" cy="22" r="7" fill="#176b5b"/>
+  <rect x="44" y="16" width="120" height="12" rx="6" fill="#c9cfda"/>
+  <rect x="20" y="66" width="220" height="10" rx="5" fill="#c9cfda"/>
+  <rect x="20" y="92" width="300" height="10" rx="5" fill="#d6dbe4"/>
+  <rect x="20" y="118" width="260" height="10" rx="5" fill="#d6dbe4"/>
+  <rect x="20" y="160" width="330" height="34" rx="6" fill="#dde2ea"/>
+  <rect x="20" y="204" width="330" height="34" rx="6" fill="#e6e9ef"/>
+  <rect x="20" y="248" width="330" height="34" rx="6" fill="#e6e9ef"/>
+  <text x="24" y="404" font-family="Segoe UI, sans-serif" font-size="13" fill="#8a93a3">左侧会话列保持原样</text>
+
+  <rect x="380" y="0" width="700" height="640" fill="#ffffff"/>
+  <rect x="380" y="0" width="700" height="44" fill="#f2f4f8"/>
+  <rect x="396" y="12" width="86" height="22" rx="6" fill="#ffffff" stroke="#c9cfda"/>
+  <text x="404" y="28" font-family="Segoe UI, sans-serif" font-size="12" fill="#3b4553">README.md</text>
+  <rect x="490" y="12" width="70" height="22" rx="6" fill="#eef0f4"/>
+  <text x="499" y="28" font-family="Segoe UI, sans-serif" font-size="12" fill="#7b8698">notes.ts</text>
+
+  <rect x="380" y="56" width="700" height="40" fill="#fafbfc"/>
+  <rect x="396" y="66" width="14" height="14" rx="3" fill="none" stroke="#7b8698" stroke-width="1.6"/>
+  <text x="418" y="79" font-family="Segoe UI, sans-serif" font-size="11.5" fill="#596474">~/repo/README.md</text>
+  <rect x="700" y="64" width="74" height="22" rx="5" fill="#eef0f4" stroke="#c9cfda"/>
+  <text x="708" y="79" font-family="Segoe UI, sans-serif" font-size="11" fill="#596474">跟着主题</text>
+  <rect x="784" y="64" width="54" height="22" rx="5" fill="#eef0f4" stroke="#c9cfda"/>
+  <text x="792" y="79" font-family="Segoe UI, sans-serif" font-size="11" fill="#596474">换行</text>
+  <rect x="848" y="64" width="54" height="22" rx="5" fill="#eef0f4" stroke="#c9cfda"/>
+  <text x="856" y="79" font-family="Segoe UI, sans-serif" font-size="11" fill="#596474">重载</text>
+  <rect x="912" y="64" width="152" height="22" rx="5" fill="#eef0f4" stroke="#c9cfda"/>
+  <text x="920" y="79" font-family="Segoe UI, sans-serif" font-size="11" fill="#596474">Monaco 编辑器</text>
+
+  <g clip-path="url(#editorClip)">
+    <rect x="404" y="96" width="636" height="440" fill="#ffffff"/>
+    <rect x="404" y="96" width="52" height="440" fill="#fafbfc"/>
+    <g font-family="Consolas, monospace" font-size="12.5" fill="#9aa4b2" text-anchor="end">
+      <text x="446" y="126">1</text><text x="446" y="148">2</text><text x="446" y="170">3</text>
+      <text x="446" y="192">4</text><text x="446" y="214">5</text><text x="446" y="236">6</text>
+      <text x="446" y="258">7</text><text x="446" y="280">8</text><text x="446" y="302">9</text>
+      <text x="446" y="324">10</text><text x="446" y="346">11</text><text x="446" y="368">12</text>
+    </g>
+    <rect x="404" y="192" width="636" height="22" fill="#f4f6f9"/>
+    <g font-family="Consolas, monospace" font-size="12.5">
+      <text x="462" y="126" fill="#7b8698"># dsh-monaco</text>
+      <text x="462" y="148" fill="#3b4553">Monaco</text>
+      <text x="521" y="148" fill="#3b4553">在右侧边栏打开文件。</text>
+      <text x="462" y="170" fill="#3b4553"/>
+      <text x="462" y="192" fill="#3b4553">export</text>
+      <text x="512" y="192" fill="#3b4553"> function</text>
+      <text x="577" y="192" fill="#176b5b">apply</text>
+      <text x="619" y="192" fill="#3b4553">(ctx, config) {'{'}</text>
+      <text x="488" y="214" fill="#3b4553">ctx.effect(</text>
+      <text x="488" y="236" fill="#3b4553">{'  '}() =&gt; registerAssetRoute(...),</text>
+      <text x="488" y="258" fill="#3b4553">{'  '}'dsh-monaco: web routes',</text>
+      <text x="488" y="280" fill="#3b4553">)</text>
+      <text x="462" y="302" fill="#3b4553">{'}'}</text>
+      <text x="462" y="324" fill="#3b4553"/>
+      <text x="462" y="346" fill="#7b8698">// 保存带版本守卫：磁盘并发修改会先询问</text>
+      <text x="462" y="368" fill="#3b4553">await saveDocument(request)</text>
+    </g>
+    <rect x="446" y="355" width="4" height="17" fill="#176b5b"/>
+  </g>
+
+  <rect x="380" y="536" width="700" height="30" fill="#f2f4f8"/>
+  <text x="404" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#7b8698">markdown</text>
+  <text x="470" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#7b8698">第 7 行，第 4 列</text>
+  <text x="572" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#7b8698">12 行</text>
+  <text x="870" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#c9822b">未保存</text>
+  <rect x="928" y="542" width="56" height="20" rx="4" fill="#ffffff" stroke="#176b5b"/>
+  <text x="941" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#176b5b">保存</text>
+  <rect x="992" y="542" width="72" height="20" rx="4" fill="#ffffff" stroke="#c9cfda"/>
+  <text x="1000" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#7b8698">关闭</text>
+
+  <text x="404" y="602" font-family="Segoe UI, sans-serif" font-size="12" fill="#8a93a3">布局示意：工具栏与状态栏由本插件绘制，正文是 Monaco；文件读写走宿主路由与平台 Remote。</text>
+</svg>

@@ -1,0 +1,8 @@
+# The dsh-monaco bundle patch: inserts this plugin into the profile entry list.
+# Declared by `dsh.bundle.patch` in package.json, so `dsh plugin add` reconciles
+# the package into `dsh.profile.bundles` and applies this layer on boot — no
+# manual cordis.patch.yml edit is needed.
+- insert:
+    # Stable id, so later layers can patch or disable this row by id.
+    - id: dsh-monaco
+      name: 'dsh-monaco'
