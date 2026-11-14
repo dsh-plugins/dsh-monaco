@@ -1,5 +1,5 @@
 {
-  "name": "dsh-monaco",
+  "name": "@dsh-plugin/dsh-monaco",
   "version": "0.1.0",
   "type": "module",
   "description": "Monaco editor inside the DSH right sidebar: it takes over the file preview for text and code files, edits in place, saves with a version guard, and exposes a language/theme extension API to other plugins.",
@@ -26,6 +26,7 @@
     "docs",
     "icon.svg",
     "README.md",
+    "README.zh_CN.md",
     "LICENSE"
   ],
   "scripts": {
@@ -34,9 +35,20 @@
     "build:client": "tsdown --config tsdown.client.config.mjs && tsc -p tsconfig.client.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "test": "node --test \"tests/*.test.ts\"",
-    "prepack": "npm run build"
+    "prepare": "npm run build"
   },
   "license": "LGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dsh-plugins/dsh-monaco.git"
+  },
+  "homepage": "https://github.com/dsh-plugins/dsh-monaco#readme",
+  "bugs": {
+    "url": "https://github.com/dsh-plugins/dsh-monaco/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "deepseek-harness",
     "dsh",

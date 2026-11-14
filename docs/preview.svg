@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="640" viewBox="0 0 1080 640" role="img" aria-label="dsh-monaco 在右侧边栏中的布局示意">
-  <desc>布局示意图：左侧会话列保持原样，右侧边栏的文档标签页换成 Monaco 编辑器，编辑器上方是预览工具栏，下方是状态栏与保存按钮。</desc>
+  <desc>布局示意图：左侧会话列保持原样，右侧边栏的文档标签页换成 Monaco 编辑器，编辑器上方是预览工具栏，下方是状态栏，状态栏最左侧是编辑器设置入口。</desc>
   <defs>
     <clipPath id="editorClip"><rect x="404" y="96" width="636" height="440" rx="8"/></clipPath>
   </defs>
@@ -68,14 +68,14 @@
   </g>
 
   <rect x="380" y="536" width="700" height="30" fill="#f2f4f8"/>
-  <text x="404" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#7b8698">markdown</text>
-  <text x="470" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#7b8698">第 7 行，第 4 列</text>
-  <text x="572" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#7b8698">12 行</text>
-  <text x="870" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#c9822b">未保存</text>
-  <rect x="928" y="542" width="56" height="20" rx="4" fill="#ffffff" stroke="#176b5b"/>
-  <text x="941" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#176b5b">保存</text>
-  <rect x="992" y="542" width="72" height="20" rx="4" fill="#ffffff" stroke="#c9cfda"/>
-  <text x="1000" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#7b8698">关闭</text>
+  <g stroke="#7b8698" stroke-width="1.1" fill="none">
+    <circle cx="408" cy="551" r="4.2"/>
+    <path d="M408 544.6v1.6M408 555.8v1.6M401.6 551h1.6M412.8 551h1.6M403.5 546.5l1.1 1.1M411.4 554.4l1.1 1.1M412.5 546.5l-1.1 1.1M404.6 554.4l-1.1 1.1"/>
+  </g>
+  <text x="424" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#7b8698">markdown</text>
+  <text x="490" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#7b8698">第 7 行，第 4 列</text>
+  <text x="592" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#7b8698">12 行</text>
+  <text x="1006" y="556" font-family="Segoe UI, sans-serif" font-size="11" fill="#c9822b">未保存</text>
 
-  <text x="404" y="602" font-family="Segoe UI, sans-serif" font-size="12" fill="#8a93a3">布局示意：工具栏与状态栏由本插件绘制，正文是 Monaco；文件读写走宿主路由与平台 Remote。</text>
+  <text x="404" y="602" font-family="Segoe UI, sans-serif" font-size="12" fill="#8a93a3">布局示意：工具栏与状态栏由本插件绘制，正文是 Monaco；状态栏最左侧的齿轮打开全局编辑器设置。</text>
 </svg>

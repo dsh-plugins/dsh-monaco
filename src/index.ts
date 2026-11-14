@@ -20,7 +20,7 @@ export { Config } from './config.ts'
 export type { Config as MonacoConfig, EditorDefaults } from './config.ts'
 
 /** 与 package.json 的 `name` 一致。 */
-export const name = 'dsh-monaco'
+export const name = '@dsh-plugin/dsh-monaco'
 
 /** 所需宿主服务：HTTP 载体、组合文件系统、会话存储与沙箱策略。 */
 export const inject = ['webServer', 'fs', 'sessions', 'sandboxPolicy', 'connection']

@@ -5,4 +5,5 @@
 - insert:
     # Stable id, so later layers can patch or disable this row by id.
     - id: dsh-monaco
-      name: 'dsh-monaco'
+      # `@` is a reserved YAML indicator, so the scoped package name must be quoted.
+      name: '@dsh-plugin/dsh-monaco'

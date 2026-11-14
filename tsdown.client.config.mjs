@@ -32,7 +32,8 @@ export default {
   },
   outputOptions: {
     entryFileNames: 'client.js',
-    banner: 'window.__ModuleLoader__.load({ id: "dsh-monaco", factory: (require) => {',
+    // The loader looks the factory up by entry id, which is the package name.
+    banner: 'window.__ModuleLoader__.load({ id: "@dsh-plugin/dsh-monaco", factory: (require) => {',
     footer: 'return module.exports; } });',
     intro: 'var module = { exports: {} }; var exports = module.exports;',
     codeSplitting: false,

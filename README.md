@@ -1,88 +1,119 @@
+<div align="center">
+
+<img src="./docs/banner.svg" alt="dsh-monaco" width="720" />
+
 # dsh-monaco
 
-把 Monaco 编辑器接到 DeepSeek Harness 的右侧边栏：打开工作区里的文本或代码文件时，看到的是可编辑、可直接保存的编辑器，而不是只读预览。插件同时向其他插件开放语言、高亮规则、主题、命令与动作的注册接口。
+**A real Monaco editor inside the DeepSeek Harness right sidebar: open a text or code file and edit it in place, save it under a version guard, and extend it from your own plugins with language and theme registrations.**
 
-![布局示意](docs/preview.svg)
+English | [简体中文](README.zh_CN.md)
 
-## 功能 
+[![DSH Plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-4f7cff)](https://github.com/topics/dsh-plugin)
+<img src="https://img.shields.io/github/license/dsh-plugins/dsh-monaco" alt="License">
 
-| 能力 | 说明 |
+</div>
+
+![Layout](./docs/preview.svg)
+
+`dsh-monaco` replaces the right sidebar's read-only file preview for text and code files with an editable Monaco instance. It reads through the platform's own `remote.workspaceFiles` channel, writes through a host route it registers itself (the platform file service is read-only), and exports `ctx.monacoEditor` so other plugins can register languages, Monarch tokenizer rules, themes, commands, and actions.
+
+## Features
+
+| Capability | Detail |
 |---|---|
-| 接管文件预览 | 以 `extension` 优先级注册文档预览实现，覆盖内置的代码预览与纯文本回退；图片、PDF、Office、Excel 仍由平台原实现呈现 |
-| 就地编辑与保存 | `Ctrl/Cmd+S` 写回磁盘，关闭标签页时也会提示保存；保存成功即刷新本地基线，撤销/重做、光标与滚动位置在切换到别的标签页后仍然保留 |
-| 未保存标记 | 有改动的标签页把芯片上的 `×` 画成圆点（悬停恢复成 `×`），与 VS Code 一致 |
-| 关闭确认 | 有未保存改动时关闭标签页会弹出「保存 / 不保存 / 取消」确认框：Esc 取消、Enter 保存；保存失败时确认框不会消失，并把原因留在框内 |
-| 版本守卫 | 保存携带读取时观察到的文件版本；磁盘已被别的进程改动时返回 `409`，界面给出「重新加载」与「仍然覆盖」两条明确出路，不做静默覆盖 |
-| 跟随界面主题 | 从 `--dsw-alias-*` 变量派生 Monaco 配色（选中用主题自己的文档选中蒙层，光标与焦点用品牌强调色，滚动条用边框色），界面切换亮色/暗色时同步切换；也可以在配置里固定成某个已注册主题 |
-| 跟随字体设置 | 代码字体与字号取自「设置 → 外观」里的代码字体，改完立即生效，无需重开文件 |
-| 编辑器设置 | 状态栏左侧的齿轮打开一个全局设置面板（同一浏览器内所有编辑器共享，写入 `localStorage`）；目前提供「自动换行」 |
-| 浮层配色 | 右键菜单与命令面板跟随界面主题，并补齐它们依赖的圆角、边框与阴影 |
-| 多语言 | 词条注册进平台文案系统；Monaco 自带消息包按界面语言加载（`zh-cn`、`zh-tw`、`ja`、`ko`、`de` 等） |
-| 扩展接口 | `ctx.monacoEditor`：注册语言与 Monarch 高亮规则、主题、命令、动作，追加接管的扩展名，订阅文档打开/保存/修改/关闭事件 |
+| Takes over the file preview | Registers a document-preview implementation at `extension` priority, covering the built-in code preview and the plain-text fallback. Images, PDF, Office, and Excel still render through the platform's own implementations. |
+| In-place edit and save | `Ctrl/Cmd+S` writes back to disk, and closing a tab offers the same. A successful save refreshes the local baseline; undo/redo, cursor, and scroll position survive switching to another tab. |
+| Unsaved marker | A tab with changes draws its chip `×` as a dot (hover restores the `×`), matching VS Code. |
+| Close confirmation | Closing a tab with unsaved changes asks Save / Don't Save / Cancel: Esc cancels, Enter saves. A failed save keeps the dialog open and shows the reason inside it. |
+| Version guard | A save carries the file version observed at read time. If the file changed on disk since, the host answers `409` and the UI offers Reload or Overwrite anyway — never a silent overwrite. |
+| Follows the UI theme | Monaco colors are derived from `--dsw-alias-*` variables (selection uses the theme's own document-selection veil, cursor and focus use the brand accent, scrollbars use border colors) and follow light/dark switches. A registered theme can be pinned in config instead. |
+| Follows font settings | Code font family and size come from the code font in Settings → Appearance and apply immediately, without reopening the file. |
+| Editor settings | The gear at the left of the status bar opens a global settings panel (shared by every editor in the browser, persisted in `localStorage`). It currently offers Word wrap. |
+| Popup colors | The context menu and command palette follow the UI theme, including the corner radius, border, and shadow they depend on. |
+| Localization | Strings register into the platform locale system; Monaco's own message bundles load per UI language (`zh-cn`, `zh-tw`, `ja`, `ko`, `de`, and others). |
+| Extension API | `ctx.monacoEditor`: register languages with Monarch rules, themes, commands, actions, extra claimed extensions, and subscribe to document open/save/change/close. |
 
-## 机制
+## How it works
 
-1. **编辑器资源**：宿主把 `monaco-editor/min/vs` 整棵目录挂在 `/dsh-monaco/vs/` 下（`kind: 'prefix'` 路由），浏览器注入 `loader.js` 后按 AMD 模块 `vs/editor/editor.main` 加载。语言包、字体与四个语言 Worker 都由 Monaco 自己的目录结构提供，插件产物本身只有约 75 KB。
-2. **资源防护**：请求路径先解码再逐段校验，拒绝 `.`/`..`、藏在单段里的 `/` 与 `\`、NUL，只放行白名单扩展名；解析出的绝对路径再做一次目录包含检查，随后才读盘。
-3. **读取**：走平台已有的 `remote.workspaceFiles.readBytes`（按会话授权、带字节上限），以 UTF-8 严格解码；解码失败、文件不存在、超限等情况给出可读提示，不做静默降级。
-4. **写入**：平台的文件远程服务是只读的，因此本插件在宿主注册 `POST /dsh-monaco/api/write`：校验协议版本与 JSON 形状 → 解析会话 cwd → `lstat` 拒绝非普通文件 → 按会话解析沙箱策略 → `fs.writeText` 带 `replaceIfVersion` 守卫。`FS_STALE_VERSION` 映射为 `409 stale-version`，沙箱拒绝映射为 `403`。
-5. **文档接管**：注册进 `ctx.documentPreviews` 的实现以 `renderer` 模式工作，自己读取整份文件；标签页切走时视图卸载，但 Monaco 模型与未保存文本留在插件状态里，标签页记录消失（`tab.signal` 中止）时才释放。
-6. **主题与字体**：`theme/change` 触发时重新派生配色并 `defineTheme`。这些变量的**声明值**往往还是一串 `var()`（甚至 `color-mix()`），而 Monaco 只接受最终颜色与真实字体族串，所以不手工沿变量链拼接，而是把 `var(--x, 哨兵)` 套到一个临时元素的标准属性上，再从 `getComputedStyle` 读回浏览器解析后的结果；哨兵值用来区分「变量不存在」。
+1. **Editor assets.** The host mounts the whole `monaco-editor/min/vs` directory under `/dsh-monaco/vs/` as a `kind: 'prefix'` route. The browser injects `loader.js` and loads the AMD module `vs/editor/editor.main`. Language packs, fonts, and the four language workers all come from Monaco's own directory layout, so the plugin's own bundle stays small.
 
-   读回的值还必须再规范成**十六进制**：Monaco 0.57 的主题色只认 `#rrggbb` / `#rrggbbaa`，传入 `rgb()` / `rgba()` / `color(srgb …)` 会在 `editor.create` 时抛 `Illegal value for token color`，整个编辑器停在半初始化状态（默认白底、无语法着色）。值为 `undefined` 同样会抛错，所以解析不出的键直接不写、交给基础主题补齐，无法规范的变量写一条 warn 日志。
+2. **Asset hardening.** A request path is decoded first, then validated segment by segment: `.`/`..`, an embedded `/` or `\` inside a single segment, and NUL are rejected, and only a whitelisted set of extensions passes. The resolved absolute path is checked for containment once more before the file is read.
 
-   语义也要对上：`--dsw-alias-brand-primary` 是文字主色级（暗色近白、亮色近黑），不是品牌强调色。因此选中用 `--dsw-alias-bg-document-selection`，光标与焦点框用 `--dsw-alias-brand-primary-new-colorprimary-new-color`，滚动条用 `--dsw-alias-border-l2/-l4`，浮层表面用 `--dsw-alias-bg-layer-3`。叠加透明度时对既有 alpha 做乘法（`border-l1` 本身就是 6% 的白，覆盖会把它放大成 50%）。
+3. **Reading.** Reads go through the platform's `remote.workspaceFiles.readBytes` (per-session authorization, with a byte ceiling) and are decoded strictly as UTF-8. Decode failures, missing files, and oversize reads surface a readable message rather than a silent fallback.
 
-   字体取 body 上合成好的 `--ds-font-family-code` 与 `--dsh-code-font-size`；状态栏等界面文字用正文栈 `--dsw-font-family`。
-7. **关闭确认**：平台的关闭链路是同步的——`sidebarRight.close(tabId)` → 关闭钩子 → 移除标签页；钩子要么正常返回（继续关），要么抛错（保留标签页，平台文档写明 *Failure preserves the tab*，点击路径上平台自己捕获并记录该异常）。所以「弹出确认框」实现为：`registerCloseHandler('text', …)` 在标签页有未保存改动时抛 `TabCloseVeto` 中止这次关闭，确认框挂在 `shell.overlay` 里；用户选完再由守卫发起一次被放行的关闭。放行只在这一次同步调用内有效，不会残留到下一次关闭。
+4. **Writing.** The platform file remote is read-only, so the plugin registers `POST /dsh-monaco/api/write` on the host: validate protocol version and JSON shape → resolve the session cwd → `lstat` and reject non-regular files → resolve the sandbox policy for the session → `fs.writeText` with a `replaceIfVersion` guard. `FS_STALE_VERSION` maps to `409 stale-version`; a sandbox refusal maps to `403`.
 
-   标签页上的 `×` 由平台停靠组件渲染，没有可替换的接口，所以圆点不改标题、只在关闭按钮上打 `data-dsh-monaco-tab-dirty` 标记，由样式把图标改成圆点（`visibility` 而非 `display`，按钮尺寸不变、标签条不抖动）。标记在脏状态变化与标签条重渲染时都会重新打一遍，避免 React 重挂节点丢掉外来属性。
+5. **Document takeover.** The implementation registered with `ctx.documentPreviews` works in `renderer` mode and reads the whole file itself. Switching away from a tab unmounts the view, but the Monaco model and unsaved text stay in plugin state; they are released only when the tab record disappears (`tab.signal` aborts).
 
-   两条已知的平台侧行为：其一，`Ctrl/Cmd+W` 走平台的快捷键分发，那里没有 `try/catch`，所以按键关闭时会有一条被抛出的 `TabCloseVeto` 落到控制台——确认框照常弹出，功能不受影响；其二，平台在「用新资源替换标签页」时同样会过一遍关闭钩子，此时确认框的「保存」会先关掉旧标签页，那次导航需要重新发起。这两个都是平台关闭链路本身的性质，插件侧不做绕道。
-8. **浮层变量**：右键菜单与命令面板并不渲染在编辑器内部——Monaco 把它们放进 `div.shadow-root-host` 的 Shadow DOM，宿主的 `:host { all: initial }` 切断全部继承，而 `--vscode-*` 变量只声明在 `.monaco-editor` / `.monaco-component` 上。于是浮层里 `background-color: var(--vscode-menu-background)` 整条失效（背景透明）、`color` 回落到初始值（黑字），深色背景上的黑字基本看不见。
+6. **Theme and font.** On `theme/change` the colors are re-derived and `defineTheme` runs again. These variables' *declared* values are usually another `var()` (or even `color-mix()`), while Monaco only accepts resolved colors and a real font-family list — so instead of chaining variables by hand, `var(--x, sentinel)` is applied to a temporary element's standard property and the browser-resolved value is read back with `getComputedStyle`. The sentinel distinguishes "variable not defined".
 
-   修法是把这些变量镜像到 `document.documentElement`：Shadow DOM 宿主继承自 document，自定义属性可以正常继承进 shadow 树。变量取自 Monaco 自己注入的 `style.monaco-colors`，因此换主题后重新镜像即可跟上，不必在此重复维护一份配色。找到配色表之后，观察范围收敛到那张表本身（Monaco 换主题是改写既有 `<style>` 的文本），页面里其他 `head` 变化不会触发重读。
+    The value read back must then be normalized to **hexadecimal**: Monaco 0.57 theme colors accept only `#rrggbb` / `#rrggbbaa`, and passing `rgb()`, `rgba()`, or `color(srgb …)` throws `Illegal value for token color` inside `editor.create`, leaving the editor half-initialized (default white background, no syntax coloring). A value of `undefined` throws as well, so unparseable keys are simply omitted and left to the base theme, and a variable that cannot be normalized produces one warning.
 
-   另外 Monaco 只引用不定义 `--vscode-cornerRadius-*`、`--vscode-strokeThickness`、`--vscode-shadow-lg`（在 VS Code 里由工作台样式给出），缺了它们菜单就没有圆角与边框，所以这几个由插件补默认值：圆角与描边是固定值，阴影按主题的蒙层色合成。Monaco 自己声明过同名变量时以它为准。
+    Semantics matter too: `--dsw-alias-brand-primary` is the text-primary tier (near-white in dark mode, near-black in light), not the brand accent. Selection therefore uses `--dsw-alias-bg-document-selection`, cursor and focus use `--dsw-alias-brand-primary-new-colorprimary-new-color`, scrollbars use `--dsw-alias-border-l2/-l4`, and popup surfaces use `--dsw-alias-bg-layer-3`. When stacking alpha, the existing alpha is multiplied (`border-l1` is already 6% white; overwriting it would blow it up to 50%).
 
-   主题里还显式写了 `menu.*` 一族颜色（背景、前景、边框、分隔线、选中项），否则菜单会落到 Monaco 自带的灰色，和 DSH 的层次对不上。
-9. **编辑器设置**：设置在 `localStorage` 里存一份（键 `dsh-monaco/editor-settings`），当前页面与同源的其他窗口共享——跨窗口靠 `storage` 事件同步，写入方自己不会收到该事件，所以不会自激。改动立即推给已打开的实例。
+    Fonts come from the composed `--ds-font-family-code` and `--dsh-code-font-size` on `body`; interface text such as the status bar uses the text stack `--dsw-font-family`.
 
-   换行这个项目前有两处来源——全局设置是默认值，预览工具栏的按钮是该标签页的临时覆盖。平台那份状态默认就是「开」，无法区分「用户刚关掉」与「初始值」，所以只在工具栏的值**变化**时记为覆盖（挂载时的初值不算，否则全局设置永远不生效）；覆盖随标签页存在，切到别的文件不带走。改全局设置会清掉当前标签页的覆盖，否则用户一旦点过工具栏按钮，就再也没有回到「跟随全局」的路径。
+7. **Close confirmation.** The platform's close chain is synchronous: `sidebarRight.close(tabId)` → close hook → remove the tab. The hook either returns normally (close proceeds) or throws (the tab is preserved — the platform documents *Failure preserves the tab*, and its own click path catches and logs the exception). So "show a confirmation dialog" is implemented as: `registerCloseHandler('text', …)` throws `TabCloseVeto` to abort the close when the tab has unsaved changes, and the dialog lives in `shell.overlay`. Once the user chooses, the guard issues a permitted close. The permit lasts only for that one synchronous call, so it never leaks into the next close.
 
-## 安装
+    The chip `×` is rendered by the platform's docking component and has no replacement hook, so the dot leaves the title alone: it sets a `data-dsh-monaco-tab-dirty` marker on the close button and the stylesheet turns the icon into a dot (`visibility`, not `display`, so the button keeps its size and the strip does not jitter). The marker is re-applied both when the dirty state changes and when the strip re-renders, since React remounts nodes and drops foreign attributes.
+
+    Two platform behaviors are known and left as they are: `Ctrl/Cmd+W` goes through the platform's shortcut dispatcher, which has no `try/catch`, so a keyboard close logs one thrown `TabCloseVeto` to the console — the dialog still appears and nothing else is affected; and when the platform "replaces a tab with new content" it runs the same close hook, so the dialog's Save closes the old tab first and that navigation has to be reissued. Both are properties of the platform close chain, not something the plugin works around.
+
+8. **Popup variables.** The context menu and command palette are not rendered inside the editor — Monaco puts them in the Shadow DOM of a `div.shadow-root-host`, whose `:host { all: initial }` cuts off every inherited value, while `--vscode-*` variables are declared only on `.monaco-editor` / `.monaco-component`. Inside the popup, `background-color: var(--vscode-menu-background)` therefore fails outright (transparent background) and `color` falls back to the initial value (black) — black text on a dark background is effectively invisible.
+
+    The fix mirrors those variables onto `document.documentElement`: a Shadow DOM host inherits from document, so custom properties propagate into the shadow tree. The values are read from Monaco's own injected `style.monaco-colors`, so re-mirroring after a theme switch keeps up and no second copy of the palette has to be maintained here. Once that color sheet is found, observation narrows to the sheet itself (Monaco switches themes by rewriting the text of an existing `<style>`), so unrelated `head` changes do not trigger a re-read.
+
+    Monaco also only references, never defines, `--vscode-cornerRadius-*`, `--vscode-strokeThickness`, and `--vscode-shadow-lg` (in VS Code these come from the workbench stylesheet); without them the menu has no rounded corners and no border. The plugin supplies defaults: radius and stroke are fixed, and the shadow is composed from the theme's mask color. If Monaco ever declares them itself, its values win.
+
+    The theme also writes the `menu.*` color family (background, foreground, border, separator, selection) explicitly; otherwise the menu falls back to Monaco's own grey and no longer matches the DSH layers.
+
+9. **Editor settings.** Settings live in `localStorage` (key `dsh-monaco/editor-settings`) and are shared by the current page and other same-origin windows — cross-window sync uses the `storage` event, which the writing window does not receive, so it cannot feed back on itself. Changes are pushed to every open editor immediately.
+
+    Word wrap currently has two sources: the global setting is the default, and the preview toolbar's button is a per-tab override. The platform's own state defaults to "on" and cannot distinguish "the user just turned it off" from "the initial value", so the toolbar value is recorded as an override only when it *changes* — the initial value at mount does not count, otherwise the global setting would never take effect. The override lives with the tab and does not follow you to another file. Changing the global setting clears the current tab's override; without that, a user who once pressed the toolbar button could never get back to "follow the global setting".
+
+## Install
+
+From a Git source (the source is fetched and built in place; pnpm blocks dependency build scripts by default, so approve it once when prompted):
 
 ```powershell
-git clone <repo> dsh-monaco
+dsh plugin --profile web add "github:dsh-plugins/dsh-monaco"
+```
+
+Or, inside a DSH session, point `plugin_manager`'s `install_bundle` at this directory; or install a local directory from the command line:
+
+```powershell
+dsh plugin --profile web add C:\path\to\dsh-monaco
+```
+
+Building from source:
+
+```powershell
+git clone https://github.com/dsh-plugins/dsh-monaco.git
 cd dsh-monaco
 npm install --ignore-scripts
 npm run build
 npm test
 ```
 
-`npm test` 用 `node --test` 直接运行 `tests/*.test.ts`，依赖 Node ≥ 22.18 的类型剥离能力（`engines.node` 已声明该下限）。
+`npm test` runs `tests/*.test.ts` directly with `node --test`, relying on type stripping in Node ≥ 22.18 (`engines.node` declares that floor).
 
-在 DSH 会话里用 `plugin_manager` 的 `install_bundle` 指向本目录；或在命令行：
+> This package is not on npm yet. Once published, `dsh plugin --profile web add "@dsh-plugin/dsh-monaco"` will install it without a build step.
 
-```powershell
-dsh plugin --profile web add C:\path\to\dsh-monaco
-```
-
-`cordis.patch.yml` 插入一行宿主入口：
+`cordis.patch.yml` inserts one host entry (`@` is a reserved YAML indicator, so the scoped package name must be quoted):
 
 ```yaml
 - insert:
     - id: dsh-monaco
-      name: 'dsh-monaco'
+      name: '@dsh-plugin/dsh-monaco'
 ```
 
-以目录链接方式安装后，重新执行 `npm run build` **不会**让正在运行的实例换用新的宿主端产物：模块 URL 不变，Node 的 ESM 缓存不会重新读盘。改完宿主端代码并构建后需要重启 dsh 实例；只改客户端代码时重新构建并刷新页面即可。
+After installing from a linked directory, re-running `npm run build` does **not** switch a running instance to the new host-side artifact: the module URL is unchanged, so Node's ESM cache never re-reads it. Rebuild host code and restart the dsh instance; for client-only changes, rebuild and refresh the page.
 
-## 配置
+## Configuration
 
 ```yaml
 - id: dsh-monaco
-  name: 'dsh-monaco'
+  name: '@dsh-plugin/dsh-monaco'
   config:
     editor:
       fontSize: 13
@@ -95,28 +126,28 @@ dsh plugin --profile web add C:\path\to\dsh-monaco
     assetCacheSeconds: 86400
 ```
 
-| 字段 | 默认 | 说明 |
+| Field | Default | Meaning |
 |---|---|---|
-| `editor.fontSize` | `12` | 编辑器字号（8–32）；**DSH 设置了代码字号时以 DSH 为准** |
-| `editor.tabSize` | `2` | 缩进宽度（1–8） |
-| `editor.insertSpaces` | `true` | 使用空格缩进 |
-| `editor.minimap` | `false` | 显示缩略图 |
-| `editor.theme` | `'dsh'` | `dsh` 跟随界面主题；也可以写某个已注册主题的 id |
-| `extensions` | `[]` | 在内置接管范围之外追加扩展名（可带前导点） |
-| `maxWriteBytes` | `8388608` | 单次保存允许的最大文本字节数，超过即拒绝，不截断 |
-| `assetCacheSeconds` | `86400` | Monaco 静态资源的浏览器缓存秒数 |
+| `editor.fontSize` | `12` | Editor font size (8–32); **a code font size set in DSH takes precedence** |
+| `editor.tabSize` | `2` | Indent width (1–8) |
+| `editor.insertSpaces` | `true` | Indent with spaces |
+| `editor.minimap` | `false` | Show the minimap |
+| `editor.theme` | `'dsh'` | `dsh` follows the UI theme; any registered theme id may be pinned instead |
+| `extensions` | `[]` | Extra extensions to claim beyond the built-in set (a leading dot is allowed) |
+| `maxWriteBytes` | `8388608` | Largest text accepted in one save; anything above is refused, never truncated |
+| `assetCacheSeconds` | `86400` | Browser cache lifetime for Monaco's static assets |
 
-配置通过 `webserver/index-inject` 注入为 `window.__DSH_MONACO_CONFIG__`，浏览器端与宿主端读到的值一致。
+Config is injected through `webserver/index-inject` as `window.__DSH_MONACO_CONFIG__`, so the host and the browser read the same values.
 
-## 给其他插件用的接口
+## Extension API
 
-客户端 Cordis 服务 `ctx.monacoEditor`，在依赖方的 `export const inject` 里声明 `'monacoEditor'` 即可使用。
+Declare `'monacoEditor'` in your plugin's `export const inject` to use the client-side Cordis service `ctx.monacoEditor`.
 
 ```ts
 export const inject = ['monacoEditor']
 
 export function apply(ctx: Context): void {
-  // 语言 + Monarch 高亮规则 + 语言配置
+  // Language + Monarch rules + language configuration
   ctx.effect(() => ctx.monacoEditor.registerLanguage({
     id: 'glsl',
     label: 'GLSL',
@@ -134,7 +165,7 @@ export function apply(ctx: Context): void {
     configuration: { comments: { lineComment: '//' }, brackets: [['{', '}'], ['[', ']'], ['(', ')']] },
   }))
 
-  // 主题：基于 Monaco 内置基础主题叠加
+  // Theme: layered over one of Monaco's base themes
   ctx.effect(() => ctx.monacoEditor.registerTheme({
     id: 'dsh-monaco-solarized',
     label: 'Solarized',
@@ -144,13 +175,13 @@ export function apply(ctx: Context): void {
     colors: { 'editor.background': '#002b36' },
   }))
 
-  // 命令与动作：快捷键要用 Monaco 的常量，所以在 ready 之后注册
+  // Commands and actions: keybindings need Monaco's constants, so register after ready
   void ctx.monacoEditor.ready.then(() => {
     const monaco = ctx.monacoEditor.monaco
     if (monaco === undefined) return
     ctx.effect(() => ctx.monacoEditor.registerCommand({
       id: 'dsh-monaco.insertTimestamp',
-      label: '插入时间戳',
+      label: 'Insert timestamp',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK],
       run: ({ editor, monaco }) => {
         const line = editor.getPosition()?.lineNumber ?? 1
@@ -162,64 +193,64 @@ export function apply(ctx: Context): void {
     }))
   })
 
-  // 追加接管的扩展名
+  // Extra claimed extensions
   ctx.effect(() => ctx.monacoEditor.registerFileExtensions(['log', 'properties.local']))
 
-  // 文档事件
+  // Document events
   ctx.effect(() => ctx.monacoEditor.events.onDidSaveDocument(({ sessionId, path, version }) => {
     ctx.logger.info('saved %s (%s) in %s', path, version, sessionId)
   }))
 }
 ```
 
-`registerLanguage` 的字段语义与 Monaco 的 `languages.register` 一致：`extensions`、`filenames`、`filenamePatterns` 决定文件匹配，`tokens` 是 Monarch 规则，`configuration` 是语言配置；插件注册的语言排在 Monaco 自带语言之前，同一扩展名以插件声明为准。`loader` 字段可以在应用规则之前加载另一个贡献包（例如 `globalThis.require(['vs/basic-languages/…'])`）。
+`registerLanguage` follows Monaco's `languages.register` field semantics: `extensions`, `filenames`, and `filenamePatterns` decide file matching, `tokens` is the Monarch rule set, and `configuration` is the language configuration. Plugin-registered languages rank ahead of Monaco's built-ins, so a plugin declaration wins for the same extension. The `loader` field loads another contribution bundle before the rules are applied (for example `globalThis.require(['vs/basic-languages/…'])`).
 
-`monacoEditor` 的完整成员：
+Full `monacoEditor` surface:
 
-| 成员 | 说明 |
+| Member | Meaning |
 |---|---|
-| `version` | 扩展接口版本，当前为 `1` |
-| `ready` | Monaco 就绪的 Promise；在其中可以安全调用编辑器 API |
-| `monaco` | 已加载的 Monaco 命名空间，尚未就绪时为 `undefined` |
-| `registerLanguage(contribution)` | 注册语言、高亮规则与语言配置，返回撤销函数 |
-| `registerTheme(contribution)` | 注册基于内置基础主题的配色主题 |
-| `registerCommand(contribution)` | 注册命令（进命令面板，可绑定快捷键） |
-| `registerAction(contribution)` | 注册动作（可带 Monaco 上下文键前置条件） |
-| `registerFileExtensions(extensions)` | 追加由编辑器接管的文件扩展名 |
-| `getActiveEditor()` | 当前聚焦的编辑器：`{ editor, monaco, document }`，没有打开编辑器时为 `undefined` |
-| `openFile({ sessionId, path, line? })` | 在侧边栏打开文件并可选跳到某一行 |
-| `events.onDidOpenDocument / onDidSaveDocument / onDidChangeDocument / onDidCloseDocument` | 文档生命周期 |
+| `version` | Extension API version, currently `1` |
+| `ready` | Promise resolved once Monaco is ready; the editor API is safe to call inside it |
+| `monaco` | The loaded Monaco namespace, `undefined` before it is ready |
+| `registerLanguage(contribution)` | Register a language, its rules, and its configuration; returns a disposer |
+| `registerTheme(contribution)` | Register a color theme layered over a built-in base theme |
+| `registerCommand(contribution)` | Register a command (command palette, optional keybindings) |
+| `registerAction(contribution)` | Register an action (optional Monaco context-key precondition) |
+| `registerFileExtensions(extensions)` | Claim additional file extensions for the editor |
+| `getActiveEditor()` | The focused editor as `{ editor, monaco, document }`, or `undefined` when none is open |
+| `openFile({ sessionId, path, line? })` | Open a file in the sidebar, optionally revealing a line |
+| `events.onDidOpenDocument / onDidSaveDocument / onDidChangeDocument / onDidCloseDocument` | Document lifecycle |
 
-## 开发
+## Development
 
 ```powershell
-npm run typecheck   # 宿主端与客户端两套 tsconfig
-npm test            # node --test，直接用 Node 22+ 的类型剥离跑 tests/*.test.ts
-npm run build       # build:host (tsc) + build:client (tsdown + 声明文件)
+npm run typecheck   # both tsconfigs: host and client
+npm test            # node --test, type stripping over tests/*.test.ts
+npm run build       # build:host (tsc) + build:client (tsdown + declarations)
 ```
 
-源码分三层：
+The source has three layers:
 
-- `src/shared/`：宿主与浏览器共用的纯逻辑（地址构造、资源路径校验、扩展名归一化、语言匹配、保存协议、语言映射），测试集中在这些不依赖运行时的规则上；
-- `src/`（顶层）：宿主端——资源路由、保存路由、Monaco 目录定位、配置；
-- `src/client/`：浏览器端——Monaco 加载器、主题派生与浮层变量、扩展注册表、编辑器状态、保存通道、关闭守卫、编辑器设置与视图、对外服务。
+- `src/shared/` — pure logic shared by host and browser (address construction, asset path validation, extension normalization, language matching, the save protocol, locale mapping). Tests concentrate on these runtime-independent rules.
+- `src/` (top level) — the host half: asset route, write route, Monaco directory resolution, config.
+- `src/client/` — the browser half: Monaco loader, theme derivation and popup variables, extension registry, editor state, save channel, close guard, editor settings and view, and the exported service.
 
-客户端产物由 `tsdown.client.config.mjs` 包成 `window.__ModuleLoader__.load({ id: "dsh-monaco", factory })`；`react`、`react-dom`、`@deepseek-ai/cordis` 保持外部化，其余依赖内联。运行期不对 `@deepseek-ai/*` 做值导入：宿主端只按用到的成员声明自己的服务外观（`src/host-types.ts`），客户端同理（`src/client/types.ts`）。
+`tsdown.client.config.mjs` wraps the client output as `window.__ModuleLoader__.load({ id: "@dsh-plugin/dsh-monaco", factory })` — the registration id must equal the package name, because the platform looks the factory up by entry id and otherwise reports *loaded without registering*. `react`, `react-dom`, and `@deepseek-ai/cordis` stay external; everything else is inlined. At runtime the plugin never value-imports `@deepseek-ai/*`: each half declares only the service faces it actually uses (`src/host-types.ts`, `src/client/types.ts`).
 
-## 验证清单
+## Verification checklist
 
-- [x] 启动日志无 `plugin tree failed to load`，客户端条目出现在 `window.__DSH_BOOT__.entries`
-- [x] `__DSH_MONACO_CONFIG__` 注入值与宿主配置一致
-- [x] `/dsh-monaco/vs/loader.js`、`editor.main.js`、`editor.main.css`、多语言与 Worker 静态资源均返回 200 与正确 Content-Type
-- [x] `/dsh-monaco/vs/../../package.json`、`..%2f..%2fpackage.json`、`..%5c..%5cpackage.json` 均返回 404
-- [x] 保存路由：正常写入 200、方法不符 405、非 JSON 类型 415、坏 JSON 400、版本过期 409、文件不存在 404、超出上限 413
-- [x] 客户端产物在 `__ModuleLoader__.load` 之外没有顶层声明，`factory` 返回 `{ name, inject, apply, VIEWER_ID }`
-- [x] 状态栏没有「保存」按钮；`Ctrl+S` 仍写回磁盘
-- [x] 有未保存改动时标签芯片的 `×` 变成圆点（标记属性 `data-dsh-monaco-tab-dirty`、图标 `visibility: hidden`、按钮尺寸不变）
-- [x] 关闭有改动的标签页弹出确认框；「取消」与 Esc 保留标签页与改动，「不保存」关闭且磁盘不变，「保存」关闭且磁盘写入成功
-- [x] 右键菜单不透明且可读：背景 `rgb(53, 54, 56)`、字色 `rgb(249, 250, 251)`、圆角 8px、边框 1px
-- [x] 状态栏最左侧是设置齿轮；面板里切换「自动换行」后 Monaco 的 `wordWrap` 随之变化，并写入 `localStorage`、刷新页面后仍生效
+- [x] Boot log has no `plugin tree failed to load`, and the client entry appears in `window.__DSH_BOOT__.entries`
+- [x] `__DSH_MONACO_CONFIG__` matches the host config
+- [x] `/dsh-monaco/vs/loader.js`, `editor.main.js`, `editor.main.css`, the locale packs, and the workers all answer 200 with the right Content-Type
+- [x] `/dsh-monaco/vs/../../package.json`, `..%2f..%2fpackage.json`, and `..%5c..%5cpackage.json` all answer 404
+- [x] Write route: normal write 200, wrong method 405, non-JSON content type 415, malformed JSON 400, stale version 409, missing file 404, oversize 413
+- [x] The client artifact declares nothing outside `__ModuleLoader__.load`, and `factory` returns `{ name, inject, apply, VIEWER_ID }`
+- [x] The status bar has no Save button, and `Ctrl+S` still writes to disk
+- [x] A tab with unsaved changes turns its chip `×` into a dot (`data-dsh-monaco-tab-dirty`, icon `visibility: hidden`, button size unchanged)
+- [x] Closing a changed tab opens the dialog; Cancel and Esc keep the tab and its changes, Don't Save closes it without touching the file, Save closes it after a successful write
+- [x] The context menu is opaque and readable: background `rgb(53, 54, 56)`, text `rgb(249, 250, 251)`, 8px radius, 1px border
+- [x] The settings gear sits at the far left of the status bar; toggling Word wrap changes Monaco's `wordWrap`, persists to `localStorage`, and survives a page reload
 
-## 许可
+## License
 
-LGPL-3.0-only。Monaco Editor 由 Microsoft 以 MIT 许可发布，随依赖安装，不随本仓库分发。
+LGPL-3.0-only. Monaco Editor is published by Microsoft under the MIT license; it is installed as a dependency and is not redistributed by this repository.
