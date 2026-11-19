@@ -162,6 +162,10 @@ function constructionOptions(
     scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10, useShadows: false },
     wordBasedSuggestions: 'currentDocument',
     unicodeHighlight: { ambiguousCharacters: false },
+    // 语义着色的开关默认跟随主题，而 Monaco 0.57 的 standalone 主题服务把主题侧的
+    // `semanticHighlighting` 固定成关闭，等于任何语义 token 都不会上色。
+    // 这里全局打开：没有提供者的语言收不到语义 token，行为不变。
+    'semanticHighlighting.enabled': true,
     ariaLabel: label,
   }
 }
@@ -325,6 +329,7 @@ export function EditorBody(props: EditorBodyProps): ReactNode {
     })
     instanceRef.current = instance
     instances.set(tab.id, {
+      tabId: tab.id,
       editor: instance,
       describe: (): EditorCommandContext => {
         const latest = sessions.stateOf(tab.id)

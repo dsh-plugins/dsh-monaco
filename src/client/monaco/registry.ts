@@ -7,11 +7,13 @@
  */
 import type { LanguageDescriptor } from '../../shared/language.ts'
 import { claimedExtensions, normalizeExtension } from '../../shared/claim.ts'
+import type * as Monaco from 'monaco-editor'
 import type { MonacoApi } from '../types.ts'
 import type {
   ActionContribution,
   CommandContribution,
   LanguageContribution,
+  SemanticTokensContribution,
   ThemeContribution,
 } from '../types.ts'
 import { themeDefinitionOf, type RegisteredTheme } from './theme.ts'
@@ -23,6 +25,7 @@ export interface RegistrySnapshot {
   readonly themes: readonly ThemeContribution[]
   readonly commands: readonly CommandContribution[]
   readonly actions: readonly ActionContribution[]
+  readonly semanticTokens: readonly SemanticTokensContribution[]
   /** 由外部插件追加、已归并进文档接管范围的扩展名。 */
   readonly extensions: readonly string[]
 }
@@ -62,13 +65,17 @@ export class MonacoExtensionRegistry {
   private readonly themeMap = new Map<string, ThemeContribution>()
   private readonly commandMap = new Map<string, CommandContribution>()
   private readonly actionMap = new Map<string, ActionContribution>()
+  /** 语义着色贡献：标识到贡献的映射，同一语言只保留最后注册的一条。 */
+  private readonly semanticMap = new Map<string, SemanticTokensContribution>()
+  /** 已写进 Monaco 的语义着色注册，语言标识到撤销函数。 */
+  private readonly semanticRegistrations = new Map<string, () => void>()
   private readonly extraExtensions = new Map<string, number>()
   private readonly listeners = new Set<() => void>()
   /** 已把 loader 跑完的语言贡献，避免重复执行同一份加载逻辑。 */
   private readonly loadedLanguages = new Map<string, LanguageContribution>()
   private revision = 0
   private snapshot: RegistrySnapshot = {
-    revision: 0, languages: [], themes: [], commands: [], actions: [], extensions: [],
+    revision: 0, languages: [], themes: [], commands: [], actions: [], semanticTokens: [], extensions: [],
   }
   private syncChain: Promise<void> = Promise.resolve()
 
@@ -139,6 +146,46 @@ export class MonacoExtensionRegistry {
     }
   }
 
+  /**
+   * 为一种或多种语言注册语义着色。
+   *
+   * 提供者按语言选择器注册进 Monaco；同一标识再次注册会先撤销上一次的 Monaco 注册，
+   * 因此热重载不会留下两份互相竞争的提供者。
+   * @param contribution - 语言选择器、legend、提供者与两套词法配色。
+   * @returns 撤销注册。
+   */
+  registerSemanticTokens(contribution: SemanticTokensContribution): () => void {
+    if (contribution.id.trim().length === 0) throw new Error('dsh-monaco: semantic tokens id must not be empty')
+    const selector = contribution.language
+    const empty = typeof selector === 'string'
+      ? selector.trim().length === 0
+      : Array.isArray(selector)
+        ? selector.length === 0
+        : ((selector as Monaco.languages.LanguageFilter).language ?? '').trim().length === 0
+          && (selector as Monaco.languages.LanguageFilter).pattern === undefined
+    if (empty) throw new Error(`dsh-monaco: semantic tokens "${contribution.id}" must name a language`)
+    const existing = this.semanticMap.get(contribution.id)
+    if (existing !== undefined) this.releaseSemantic(contribution.id)
+    this.semanticMap.set(contribution.id, contribution)
+    this.bump()
+    return () => {
+      if (this.semanticMap.get(contribution.id) !== contribution) return
+      this.semanticMap.delete(contribution.id)
+      this.releaseSemantic(contribution.id)
+      this.bump()
+    }
+  }
+
+  /**
+   * 读取当前生效的语义着色词法配色。
+   * @param scheme - 界面配色方案。
+   * @returns 合并后的规则；没有贡献时为只读空数组。
+   */
+  semanticTokenRules(scheme: 'light' | 'dark'): readonly Monaco.editor.ITokenThemeRule[] {
+    const rules: Monaco.editor.ITokenThemeRule[] = []
+    for (const contribution of this.semanticMap.values()) rules.push(...(contribution.tokenRules?.[scheme] ?? []))
+    return rules
+  }
   /**
    * 追加由编辑器接管的文件扩展名。
    * @param extensions - 扩展名列表，可带前导点。
@@ -266,6 +313,9 @@ export class MonacoExtensionRegistry {
         ...(contribution.filenamePatterns === undefined ? {} : { filenamePatterns: [...contribution.filenamePatterns] }),
       })
       if (contribution.tokens !== undefined) api.languages.setMonarchTokensProvider(contribution.id, contribution.tokens)
+      if (contribution.tokensProvider !== undefined) {
+        api.languages.setTokensProvider(contribution.id, contribution.tokensProvider)
+      }
       if (contribution.configuration !== undefined) {
         api.languages.setLanguageConfiguration(contribution.id, contribution.configuration)
       }
@@ -280,6 +330,28 @@ export class MonacoExtensionRegistry {
         colors: contribution.colors ?? {},
       }))
     }
+    for (const contribution of this.semanticMap.values()) {
+      if (this.semanticRegistrations.has(contribution.id)) continue
+      const disposer = api.languages.registerDocumentSemanticTokensProvider(
+        contribution.language,
+        contribution.provider,
+      )
+      this.semanticRegistrations.set(contribution.id, () => { disposer.dispose() })
+    }
+    // 撤销过的贡献可能在本次同步之前就被移除：清掉不留任何 Monaco 侧注册。
+    for (const [id, release] of this.semanticRegistrations) {
+      if (this.semanticMap.has(id)) continue
+      release()
+      this.semanticRegistrations.delete(id)
+    }
+  }
+
+  /** 撤销一条贡献已写进 Monaco 的语义着色注册。 */
+  private releaseSemantic(id: string): void {
+    const release = this.semanticRegistrations.get(id)
+    if (release === undefined) return
+    release()
+    this.semanticRegistrations.delete(id)
   }
 
   private bump(): void {
@@ -290,6 +362,7 @@ export class MonacoExtensionRegistry {
       themes: [...this.themeMap.values()],
       commands: [...this.commandMap.values()],
       actions: [...this.actionMap.values()],
+      semanticTokens: [...this.semanticMap.values()],
       extensions: claimedExtensions([], this.extraExtensionList()),
     }
     for (const listener of this.listeners) listener()

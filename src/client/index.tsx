@@ -122,7 +122,10 @@ export function apply(ctx: ClientContext): void {
   /** 把界面主题的颜色写进 Monaco，并切到当前选择。 */
   const applyTheme = (api: MonacoApi): void => {
     const scheme = platform.theme.getTheme().active.colorScheme
-    api.editor.defineTheme(schemeThemeId(scheme), buildSchemeTheme(scheme, readDocumentTokens(platform.logger)))
+    api.editor.defineTheme(
+      schemeThemeId(scheme),
+      buildSchemeTheme(scheme, readDocumentTokens(platform.logger), registry.semanticTokenRules(scheme)),
+    )
     api.editor.setTheme(themeId())
   }
 
@@ -325,6 +328,7 @@ export function apply(ctx: ClientContext): void {
     get monaco() { return runtime.getState().api },
     registerLanguage: contribution => registry.registerLanguage(contribution),
     registerTheme: contribution => registry.registerTheme(contribution),
+    registerSemanticTokens: contribution => registry.registerSemanticTokens(contribution),
     registerCommand: contribution => registry.registerCommand(contribution),
     registerAction: contribution => registry.registerAction(contribution),
     registerFileExtensions: extensions => registry.registerFileExtensions(extensions),
@@ -339,6 +343,20 @@ export function apply(ctx: ClientContext): void {
       return true
     },
     events: {
+      onDidMountEditor: listener => instances.onMount((entry) => {
+        const context = entry.describe()
+        listener({
+          tabId: entry.tabId,
+          sessionId: context.document.sessionId,
+          path: context.document.path,
+          languageId: context.document.languageId,
+          editor: context.editor,
+          monaco: context.monaco,
+        })
+      }),
+      onDidUnmountEditor: listener => instances.onUnmount((entry) => {
+        listener({ tabId: entry.tabId, editor: entry.editor })
+      }),
       onDidOpenDocument: listener => sessions.on('open', (tabId) => {
         const base = openEventOf(tabId)
         if (base !== undefined) listener(base)
