@@ -87,7 +87,7 @@ export function apply(ctx: ClientContext): void {
   const config = readClientConfig(globalThis as { readonly __DSH_MONACO_CONFIG__?: unknown })
   const t = platform.locale.bind(LOCALE_NAMESPACE)
   const sessions = new EditorSessions()
-  const instances = new EditorInstances()
+  const instances = new EditorInstances(platform.logger)
   const registry = new MonacoExtensionRegistry(platform.logger)
   const runtimeOptions: MonacoRuntimeOptions = {
     loaderUrl: `${MONACO_ASSET_PREFIX}loader.js`,
@@ -104,6 +104,15 @@ export function apply(ctx: ClientContext): void {
 
   platform.effect(installStyles, 'dsh-monaco: styles')
   platform.effect(() => platform.locale.register(LOCALE_NAMESPACE, { zh, en }), 'dsh-monaco: dictionaries')
+  // 注册表与实例登记表都要在卸载时主动清空：Monaco 是全页共享的，写在它上面的
+  // 分词器、语义着色与主题注册不会随插件实例消失，而不撤销的注册会压住下一次加载的同名注册。
+  platform.effect(() => () => {
+    const leaked = registry.dispose()
+    if (leaked.length > 0) {
+      platform.logger.warn('dsh-monaco: 卸载时仍有语义着色贡献未撤销，已由注册表统一释放：%s', leaked.join(', '))
+    }
+    instances.disposeAll()
+  }, 'dsh-monaco: extension registry')
 
   /** 当前应使用的 Monaco 主题标识。 */
   const unknownThemeReported = new Set<string>()

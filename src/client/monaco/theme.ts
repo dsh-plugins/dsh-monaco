@@ -301,13 +301,13 @@ export function buildThemeColors(tokens: Readonly<Record<string, string>>): Reco
  * 生成一个跟随界面主题的 Monaco 主题定义。
  * @param scheme - 界面配色方案。
  * @param tokens - 已规范成十六进制的界面颜色。
- * @param tokenRules - 外部插件为该配色方案贡献的词法配色，排在基础规则之后。
+ * @param tokenRules - 该配色方案下的语义着色规则。
  * @returns 可直接交给 `monaco.editor.defineTheme` 的定义。
  */
 export function buildSchemeTheme(
   scheme: 'light' | 'dark',
   tokens: Readonly<Record<string, string>>,
-  tokenRules: readonly Monaco.editor.ITokenThemeRule[] = [],
+  tokenRules: readonly Monaco.editor.ITokenThemeRule[],
 ): Monaco.editor.IStandaloneThemeData {
   return {
     base: scheme === 'dark' ? 'vs-dark' : 'vs',

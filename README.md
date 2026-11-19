@@ -201,22 +201,26 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.monacoEditor.registerSemanticTokens({
     id: 'acme/semantic-tokens',
     language: ['glsl', 'plaintext'],
-    legend: { tokenTypes: ['variable', 'number'], tokenModifiers: [] },
     tokenRules: {
       light: [{ token: 'variable', foreground: '001080' }],
       dark: [{ token: 'variable', foreground: '74B0DF' }],
     },
     provider: {
       getLegend: () => ({ tokenTypes: ['variable', 'number'], tokenModifiers: [] }),
-      provideDocumentSemanticTokens: model => ({ data: new Uint32Array(/* relative-encoded tokens */) }),
+      provideDocumentSemanticTokens: model => ({ data: encode(model) }),
       releaseDocumentSemanticTokens: () => {},
     },
   }))
 
   // Editor instances: decorations, listeners, and any DOM work hang here and are released on unmount
-  ctx.effect(() => ctx.monacoEditor.events.onDidMountEditor(({ editor, monaco, path }) => {
-    const collection = editor.createDecorationsCollection()
-    ctx.effect(() => () => { collection.clear() }, 'acme/decorations')
+  const cleanups = new Map<string, () => void>()
+  ctx.effect(() => ctx.monacoEditor.events.onDidMountEditor(({ tabId, editor }) => {
+    const collection = editor.createDecorationsCollection([])
+    cleanups.set(tabId, () => { collection.clear() })
+  }))
+  ctx.effect(() => ctx.monacoEditor.events.onDidUnmountEditor(({ tabId }) => {
+    cleanups.get(tabId)?.()
+    cleanups.delete(tabId)
   }))
 
   // Document events
@@ -226,11 +230,11 @@ export function apply(ctx: Context): void {
 }
 ```
 
-`registerLanguage` follows Monaco's `languages.register` field semantics: `extensions`, `filenames`, and `filenamePatterns` decide file matching, `tokens` is the Monarch rule set, and `configuration` is the language configuration. Plugin-registered languages rank ahead of Monaco's built-ins, so a plugin declaration wins for the same extension. The `loader` field loads another contribution bundle before the rules are applied (for example `globalThis.require(['vs/basic-languages/…'])`). `tokensProvider` is the escape hatch for languages that need cross-line state Monarch cannot express (block scalars, indentation stacks): it is a hand-written line tokenizer wired straight into `languages.setTokensProvider`.
+`registerLanguage` follows Monaco's `languages.register` field semantics: `extensions`, `filenames`, and `filenamePatterns` decide file matching, `tokens` is the Monarch rule set, and `configuration` is the language configuration. Plugin-registered languages rank ahead of Monaco's built-ins, so a plugin declaration wins for the same extension. The `loader` field loads another contribution bundle before the rules are applied (for example `globalThis.require(['vs/basic-languages/…'])`). `tokensProvider` is the escape hatch for languages that need cross-line state Monarch cannot express (block scalars, indentation stacks): it is a hand-written line tokenizer wired straight into `languages.setTokensProvider`. It is mutually exclusive with `tokens`; declaring both throws at registration.
 
-`registerSemanticTokens` registers a `DocumentSemanticTokensProvider` for a language selector (`'yaml'` as well as your own language id — the built-in `yaml` language is registered by Monaco and available). The provider decides per document whether it applies. `tokenRules` must cover every type in the legend for both schemes: Monaco paints a semantic token with the theme's foreground for that type, and a type with no rule falls back to the body foreground.
+`registerSemanticTokens` registers a `DocumentSemanticTokensProvider` for a language selector (`'yaml'` as well as your own language id — the built-in `yaml` language is registered by Monaco and available). The provider decides per document whether it applies. `tokenRules` must cover every type in the provider's legend for both schemes: Monaco paints a semantic token with the theme's foreground for that type, and a type with no rule falls back to the body foreground. The rules land in the global token theme, so `{ token: 'string' }` also recolors `string` Monarch tokens in every other language.
 
-The editor runs with `'semanticHighlighting.enabled': true`: Monaco's standalone theme service hard-codes the theme-side switch to off, so a contributed provider could otherwise never paint anything.
+The editor runs with `'semanticHighlighting.enabled': true`: Monaco's standalone theme service hard-codes the theme-side switch to off, so a contributed provider could otherwise never paint anything. It is a global option — Monaco instances other plugins create on the same page get semantic highlighting too.
 
 Full `monacoEditor` surface:
 
@@ -249,6 +253,8 @@ Full `monacoEditor` surface:
 | `openFile({ sessionId, path, line? })` | Open a file in the sidebar, optionally revealing a line |
 | `events.onDidMountEditor / onDidUnmountEditor` | Editor instance lifecycle; the mount event carries `{ editor, monaco, tabId, sessionId, path, languageId }` |
 | `events.onDidOpenDocument / onDidSaveDocument / onDidChangeDocument / onDidCloseDocument` | Document lifecycle |
+
+Members added after `0.1.x` are detected by presence (`typeof service.registerSemanticTokens === 'function'`); `version` only increments for incompatible changes, so it cannot tell a `0.1.x` consumer whether a new member exists.
 
 ## Development
 

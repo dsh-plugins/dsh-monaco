@@ -29,7 +29,7 @@
 | 编辑器设置 | 状态栏左侧的齿轮打开一个全局设置面板（同一浏览器内所有编辑器共享，写入 `localStorage`）；目前提供「自动换行」 |
 | 浮层配色 | 右键菜单与命令面板跟随界面主题，并补齐它们依赖的圆角、边框与阴影 |
 | 多语言 | 词条注册进平台文案系统；Monaco 自带消息包按界面语言加载（`zh-cn`、`zh-tw`、`ja`、`ko`、`de` 等） |
-| 扩展接口 | `ctx.monacoEditor`：注册语言与 Monarch 高亮规则、主题、命令、动作，追加接管的扩展名，订阅文档打开/保存/修改/关闭事件 |
+| 扩展接口 | `ctx.monacoEditor`：注册语言（Monarch 规则或手写逐行分词器）、语义 token 提供者与配色、主题、命令、动作，追加接管的扩展名，订阅编辑器挂载/卸载与文档打开/保存/修改/关闭事件 |
 
 ## 机制
 
@@ -186,6 +186,33 @@ export function apply(ctx: Context): void {
   // 追加接管的扩展名
   ctx.effect(() => ctx.monacoEditor.registerFileExtensions(['log', 'properties.local']))
 
+  // 语义 token 与它自己的词法配色：跟随界面主题的派生主题不带规则，
+  // 因此每条贡献要按配色方案分别给出颜色。legend 一律由 provider 提供。
+  ctx.effect(() => ctx.monacoEditor.registerSemanticTokens({
+    id: 'acme/semantic-tokens',
+    language: ['glsl', 'plaintext'],
+    tokenRules: {
+      light: [{ token: 'variable', foreground: '001080' }],
+      dark: [{ token: 'variable', foreground: '74B0DF' }],
+    },
+    provider: {
+      getLegend: () => ({ tokenTypes: ['variable', 'number'], tokenModifiers: [] }),
+      provideDocumentSemanticTokens: model => ({ data: encode(model) }),
+      releaseDocumentSemanticTokens: () => {},
+    },
+  }))
+
+  // 编辑器实例：装饰、监听与 DOM 操作挂在这里，并在卸载事件里释放
+  const cleanups = new Map<string, () => void>()
+  ctx.effect(() => ctx.monacoEditor.events.onDidMountEditor(({ tabId, editor }) => {
+    const collection = editor.createDecorationsCollection([])
+    cleanups.set(tabId, () => { collection.clear() })
+  }))
+  ctx.effect(() => ctx.monacoEditor.events.onDidUnmountEditor(({ tabId }) => {
+    cleanups.get(tabId)?.()
+    cleanups.delete(tabId)
+  }))
+
   // 文档事件
   ctx.effect(() => ctx.monacoEditor.events.onDidSaveDocument(({ sessionId, path, version }) => {
     ctx.logger.info('saved %s (%s) in %s', path, version, sessionId)
@@ -193,7 +220,11 @@ export function apply(ctx: Context): void {
 }
 ```
 
-`registerLanguage` 的字段语义与 Monaco 的 `languages.register` 一致：`extensions`、`filenames`、`filenamePatterns` 决定文件匹配，`tokens` 是 Monarch 规则，`configuration` 是语言配置；插件注册的语言排在 Monaco 自带语言之前，同一扩展名以插件声明为准。`loader` 字段可以在应用规则之前加载另一个贡献包（例如 `globalThis.require(['vs/basic-languages/…'])`）。
+`registerLanguage` 的字段语义与 Monaco 的 `languages.register` 一致：`extensions`、`filenames`、`filenamePatterns` 决定文件匹配，`tokens` 是 Monarch 规则，`configuration` 是语言配置；插件注册的语言排在 Monaco 自带语言之前，同一扩展名以插件声明为准。`loader` 字段可以在应用规则之前加载另一个贡献包（例如 `globalThis.require(['vs/basic-languages/…'])`）。`tokensProvider` 是给 Monarch 表达不了跨行状态的语言准备的逃生舱（块标量、缩进栈）：它是一个手写的逐行分词器，直接接到 `languages.setTokensProvider`。它与 `tokens` 互斥，同时声明会在注册时抛错。
+
+`registerSemanticTokens` 按语言选择器（可以是 `'yaml'` 这样的自带语言，也可以是自己的语言标识）注册 `DocumentSemanticTokensProvider`，是否作用于某份文档由提供者自己判断。`tokenRules` 必须覆盖 provider legend 里的每一种类型、并且亮暗两套都给：Monaco 用主题里该类型的前景色画语义 token，没有规则的型别会落到正文色。这些规则进的是全局 token 主题，`{ token: 'string' }` 会同时改变其它语言里同名 Monarch token 的颜色。
+
+编辑器以 `'semanticHighlighting.enabled': true` 运行：Monaco 的 standalone 主题服务把主题侧的语义高亮开关写死为关闭，不打开这个全局选项，贡献的提供者永远画不出任何东西。它是全局选项，同页其它插件创建的 Monaco 实例也会一并启用语义着色。
 
 `monacoEditor` 的完整成员：
 
@@ -202,14 +233,18 @@ export function apply(ctx: Context): void {
 | `version` | 扩展接口版本，当前为 `1` |
 | `ready` | Monaco 就绪的 Promise；在其中可以安全调用编辑器 API |
 | `monaco` | 已加载的 Monaco 命名空间，尚未就绪时为 `undefined` |
-| `registerLanguage(contribution)` | 注册语言、高亮规则与语言配置，返回撤销函数 |
+| `registerLanguage(contribution)` | 注册语言、高亮规则（Monarch 或 `tokensProvider`）与语言配置，返回撤销函数 |
 | `registerTheme(contribution)` | 注册基于内置基础主题的配色主题 |
+| `registerSemanticTokens(contribution)` | 为一种或多种语言注册语义 token 提供者，并给出亮暗两套词法配色 |
 | `registerCommand(contribution)` | 注册命令（进命令面板，可绑定快捷键） |
 | `registerAction(contribution)` | 注册动作（可带 Monaco 上下文键前置条件） |
 | `registerFileExtensions(extensions)` | 追加由编辑器接管的文件扩展名 |
 | `getActiveEditor()` | 当前聚焦的编辑器：`{ editor, monaco, document }`，没有打开编辑器时为 `undefined` |
 | `openFile({ sessionId, path, line? })` | 在侧边栏打开文件并可选跳到某一行 |
+| `events.onDidMountEditor / onDidUnmountEditor` | 编辑器实例生命周期；挂载事件带 `{ editor, monaco, tabId, sessionId, path, languageId }` |
 | `events.onDidOpenDocument / onDidSaveDocument / onDidChangeDocument / onDidCloseDocument` | 文档生命周期 |
+
+新增成员按「存在即支持」探测（例如 `typeof service.registerSemanticTokens === 'function'`）；`version` 只在不兼容调整时递增，因此 `0.1.x` 的消费者不能靠它判断新成员是否存在。
 
 ## 开发
 

@@ -163,8 +163,8 @@ export interface LanguageContribution {
   /**
    * 手写的逐行分词器：需要按行记住跨行结构（缩进块、状态机）的语言走这条路。
    *
-   * 与 `tokens` 互斥：两者都写时以后者的注册顺序为准，Monaco 同一语言只保留一个分词器，
-   * 因此这里在写入前先判断 `tokensProvider`。
+   * 与 `tokens` 互斥，同时声明会在注册时抛错：Monaco 同一语言只保留一个分词器，
+   * 静默取后者只会让其中一套规则无声失效。
    */
   readonly tokensProvider?: Monaco.languages.TokensProvider
   /** Monarch 高亮规则。 */
@@ -238,17 +238,17 @@ export interface SemanticTokensContribution {
    *
    * Monaco 的自带语言与插件注册语言是不同标识，菜单 YAML 这类「同格式多种扩展名」的场景
    * 往往需要同时挂在自定义语言与它的基础语言上，由提供者自己按文档内容判断是否生效。
+   * 同一语言不要注册多份：Monaco 在同一分组里只采用第一个产出 token 的提供者。
    */
   readonly language: Monaco.languages.LanguageSelector
-  /** token 类型与修饰符表，`data` 里的下标以它为准。 */
-  readonly legend: Monaco.languages.SemanticTokensLegend
-  /** 提供者本身。 */
+  /** 提供者本身；legend 一律由 `provider.getLegend()` 提供，`data` 的下标以它为准。 */
   readonly provider: Monaco.languages.DocumentSemanticTokensProvider
   /**
    * 词法配色规则，按界面配色方案分别给出。
    *
-   * 主题未定义的 token 类型会落到基础主题的前景色（与正文同色），
-   * 因此这里至少要覆盖 `legend` 里用到的类型。
+   * 这些规则进的是全局 token 主题，不只作用于语义 token：`{ token: 'string' }` 会同时改变
+   * 其它语言里同名 Monarch token 的颜色。主题未定义的 token 类型会落到基础主题的前景色
+   * （与正文同色），因此至少要覆盖提供者 legend 里用到的类型。
    */
   readonly tokenRules?: {
     readonly light?: readonly Monaco.editor.ITokenThemeRule[]
@@ -323,7 +323,7 @@ export interface MonacoEditorService {
   registerTheme(contribution: ThemeContribution): Disposable
   /**
    * 为一种或多种语言注册语义着色的提供者与词法配色。
-   * @param contribution - 语言选择器、legend、提供者与两套配色规则。
+   * @param contribution - 语言选择器、提供者与两套配色规则。
    * @returns 撤销注册。
    */
   registerSemanticTokens(contribution: SemanticTokensContribution): Disposable
