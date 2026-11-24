@@ -2,14 +2,14 @@
  * Monaco 静态资源路由：把 `<package>/min/vs` 整棵目录挂在 `/dsh-monaco/vs/` 下。
  *
  * 资源路径在进入文件系统之前先由 {@link resolveVsAssetPath} 归一化，
- * 只放行白名单内的扩展名，越界与隐藏协议一律 404；请求先过 Connection 的信任栅栏。
+ * 只放行白名单内的扩展名，越界与隐藏协议一律 404。读取资源前先校验属主身份。
  * @module dsh-monaco/routes/vs-assets
  */
 import { readFile, stat } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { MONACO_ASSET_PREFIX } from '../shared/protocol.ts'
 import { resolveVsAssetPath } from '../shared/assets.ts'
-import type { ConnectionLike, HostServices, RequestLike, ResponseLike } from '../host-types.ts'
+import type { ConnectionLike, HostServices, PeerLike, RequestLike, ResponseLike } from '../host-types.ts'
 
 /** 资源路由的挂载前缀（不含结尾斜杠）。 */
 const ROUTE_PATH = MONACO_ASSET_PREFIX.replace(/\/$/u, '')
@@ -18,18 +18,23 @@ const ROUTE_PATH = MONACO_ASSET_PREFIX.replace(/\/$/u, '')
 type Logger = HostServices['logger']
 
 /**
- * 用 Connection 的信任栅栏拒绝未认证请求。
- *
- * 两条路由都对浏览器暴露了读盘与写盘能力，认证是硬性前提：`inject` 已声明 `connection`，
- * 这里不做「服务缺失就放行」的兜底。
- * @param connection - Connection 服务。
- * @param req - 请求。
- * @param res - 响应，被拒绝时由这里结束。
- * @returns 是否已经拒绝并结束响应。
+ * 文件路由只允许属主访问。0.2.3 由 WebServer 传入已认证的身份，
+ * 0.2.2 由处理函数调用 Connection.admit 校验请求。停止支持 0.2.2 时可移除该分支。
  */
-export function rejected(connection: ConnectionLike, req: RequestLike, res: ResponseLike): boolean {
-  const status = connection.requestRejection(req)
-  if (status === undefined) return false
+export function rejected(connection: ConnectionLike, req: RequestLike, res: ResponseLike, peer?: PeerLike): boolean {
+  const admission = peer === undefined
+    ? connection.admit?.(req) ?? { rejection: 503 }
+    : { peer }
+  let status: number
+  if ('rejection' in admission) {
+    status = admission.rejection
+  } else if (admission.peer.signal.aborted) {
+    status = 401
+  } else if (admission.peer.principal.kind !== 'owner') {
+    status = 403
+  } else {
+    return false
+  }
   res.writeHead(status, { 'cache-control': 'no-store' })
   res.end()
   return true
@@ -73,8 +78,11 @@ export function registerAssetRoute(services: HostServices, vsRoot: string, cache
   return services.webServer.register({
     kind: 'prefix',
     path: ROUTE_PATH,
-    handler: async (req: RequestLike, res: ResponseLike) => {
-      if (rejected(services.connection, req, res)) return
+    auth: 'required',
+    handler: async (req, res, peer) => {
+      if (rejected(services.connection, req, res, peer)) {
+        return
+      }
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         methodNotAllowed(res, ['GET', 'HEAD'])
         return

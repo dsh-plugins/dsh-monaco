@@ -12,7 +12,6 @@ import type {
   FsWriteIntentLike,
   HostServices,
   RequestLike,
-  ResponseLike,
 } from '../host-types.ts'
 import { methodNotAllowed, rejected, sendJson } from './vs-assets.ts'
 
@@ -92,8 +91,11 @@ export function registerWriteRoute(services: HostServices, maxWriteBytes: number
   return services.webServer.register({
     kind: 'exact',
     path: MONACO_SAVE_PATH,
-    handler: async (req: RequestLike, res: ResponseLike) => {
-      if (rejected(services.connection, req, res)) return
+    auth: 'required',
+    handler: async (req, res, peer) => {
+      if (rejected(services.connection, req, res, peer)) {
+        return
+      }
       if (req.method !== 'POST') {
         methodNotAllowed(res, ['POST'])
         return

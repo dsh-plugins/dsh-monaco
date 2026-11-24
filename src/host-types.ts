@@ -78,11 +78,18 @@ export interface SessionsLike {
   get(id: string): SessionLike | undefined
 }
 
+/** 宿主认证的请求身份，文件路由只供属主访问。 */
+export interface PeerLike {
+  readonly principal: { readonly kind: string }
+  readonly signal: AbortSignal
+}
+
 /** 一个已注册的 Web 路由。 */
 export interface WebRouteLike {
   readonly kind: 'exact' | 'prefix'
   readonly path: string
-  readonly handler: (req: RequestLike, res: ResponseLike) => void | Promise<void>
+  readonly auth: 'required'
+  readonly handler: (req: RequestLike, res: ResponseLike, peer?: PeerLike) => void | Promise<void>
 }
 
 /** `node:http` 请求里用到的字段。 */
@@ -110,9 +117,9 @@ export interface WebServerLike {
   register(route: WebRouteLike): () => void
 }
 
-/** Connection 的信任栅栏：拒绝未认证或来源不可信的请求。 */
+/** WebServer 未传入身份时，由 Connection 校验请求来源和凭据。 */
 export interface ConnectionLike {
-  requestRejection(request: { readonly headers: RequestLike['headers'] }): 401 | 403 | undefined
+  admit?(request: RequestLike): { readonly peer: PeerLike } | { readonly rejection: 401 | 403 | 503 }
 }
 
 /** 注入到 index.html 的一行结构化内容；这里只用到全局变量一种。 */
